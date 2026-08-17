@@ -567,8 +567,10 @@ class ClipsTab(QWidget):
         timestamps_layout.addWidget(self.add_button)
         timestamps_layout.addWidget(self.clip_status)
         right_column = QVBoxLayout()
-        right_column.addWidget(section_group("Clip timestamps", timestamps_layout), 1)
-        right_column.addWidget(section_group("Output", output_form))
+        self.clip_timestamps_group = section_group("Clip timestamps", timestamps_layout)
+        self.clip_output_group = section_group("Output", output_form)
+        right_column.addWidget(self.clip_timestamps_group, 1)
+        right_column.addWidget(self.clip_output_group)
         feature_columns = QHBoxLayout()
         feature_columns.setSpacing(14)
         feature_columns.addWidget(section_group("Input", clip_input_layout), 1)
@@ -707,6 +709,9 @@ class ClipsTab(QWidget):
 
     def validate(self) -> bool:
         source_ok, source_message = validate_video(self.source.path)
+        downstream_enabled = source_ok and self.worker is None
+        self.clip_timestamps_group.setEnabled(downstream_enabled)
+        self.clip_output_group.setEnabled(downstream_enabled)
         source_status = (("✓ " if source_ok else "") + source_message) if self.source.path else ""
         self.source_status.setText(source_status)
         self.source_status.setVisible(bool(source_status))
@@ -739,6 +744,9 @@ class ClipsTab(QWidget):
 
     def set_inputs_enabled(self, enabled: bool) -> None:
         self.source.set_enabled(enabled)
+        downstream_enabled = enabled and validate_video(self.source.path)[0]
+        self.clip_timestamps_group.setEnabled(downstream_enabled)
+        self.clip_output_group.setEnabled(downstream_enabled)
         self.output.set_enabled(enabled)
         self.add_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
