@@ -1796,6 +1796,7 @@ class MainWindow(QMainWindow):
 
     def validate(self) -> bool:
         tracks = find_audio_files(self.music.path)
+        self.generate.setText("Generate Video" if len(tracks) == 1 else "Generate Videos")
         music_ok = bool(tracks)
         music_status = (
             f"✓ Found {len(tracks)} audio file{'s' if len(tracks) != 1 else ''}."
