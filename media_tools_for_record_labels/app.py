@@ -1193,6 +1193,11 @@ class MainWindow(QMainWindow):
         )
         self.bass_effect = QCheckBox("Bass-reactive zoom blur")
         self.bass_effect.setChecked(True)
+        self.mute_original_video_audio = QCheckBox("Mute original video sound")
+        self.mute_original_video_audio.setChecked(True)
+        self.mute_original_video_audio.setVisible(False)
+        self.mute_original_video_audio_label = QLabel("Video sound")
+        self.mute_original_video_audio_label.setVisible(False)
         self.detect_drop = QCheckBox("Detect drop automatically")
         self.detect_drop.setChecked(True)
         self.pre_drop = QDoubleSpinBox()
@@ -1253,6 +1258,7 @@ class MainWindow(QMainWindow):
         artwork_layout.addWidget(self.artwork_preview)
         input_form.addRow("Image or video", artwork_row)
         input_form.addRow("", self.cover_status)
+        input_form.addRow(self.mute_original_video_audio_label, self.mute_original_video_audio)
 
         effects_form = QFormLayout()
         effects_form.setSpacing(12)
@@ -1360,6 +1366,9 @@ class MainWindow(QMainWindow):
             if value and Path(value).exists():
                 row.edit.setText(value)
         self.bass_effect.setChecked(self.settings.value("promo/bass_effect", True, type=bool))
+        self.mute_original_video_audio.setChecked(
+            self.settings.value("promo/mute_original_video_audio", True, type=bool)
+        )
         self.detect_drop.setChecked(self.settings.value("promo/detect_drop", True, type=bool))
         self.pre_drop.setValue(self.settings.value("promo/pre_drop", 2.0, type=float))
 
@@ -1391,6 +1400,7 @@ class MainWindow(QMainWindow):
             self.cover.set_path(record.get("cover", ""))
             self.output.set_path(record.get("output", ""))
             self.bass_effect.setChecked(record.get("bass_effect", True))
+            self.mute_original_video_audio.setChecked(record.get("mute_original_video_audio", True))
             self.detect_drop.blockSignals(True)
             self.detect_drop.setChecked(record.get("detect_drop", True))
             self.detect_drop.blockSignals(False)
@@ -1544,6 +1554,10 @@ class MainWindow(QMainWindow):
             else "Choose a supported audio file or a folder containing audio (WAV, AIFF, FLAC, MP3, M4A, AAC, OGG)."
         )
         cover_ok, cover_message = validate_visual(self.cover.path)
+        video_visual = Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
+        self.mute_original_video_audio.setVisible(video_visual)
+        self.mute_original_video_audio_label.setVisible(video_visual)
+        self.mute_original_video_audio.setEnabled(video_visual and cover_ok and self.worker is None)
         self.cover_status.setText(("✓ " if cover_ok else "") + cover_message)
         self.update_artwork_preview(cover_ok)
         editable = self.worker is None
@@ -1616,6 +1630,9 @@ class MainWindow(QMainWindow):
         for row in (self.music, self.cover, self.output):
             row.set_enabled(enabled)
         self.bass_effect.setEnabled(enabled)
+        self.mute_original_video_audio.setEnabled(
+            enabled and Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
+        )
         self.detect_drop.setEnabled(enabled)
         self.pre_drop.setEnabled(enabled and self.detect_drop.isChecked())
         self.promo_tracks.setEnabled(enabled)
@@ -1640,6 +1657,7 @@ class MainWindow(QMainWindow):
         self.cover.set_path("")
         self.output.set_path(self.settings.value("general/default_output", ""))
         self.bass_effect.setChecked(True)
+        self.mute_original_video_audio.setChecked(True)
         self.detect_drop.setChecked(True)
         self.pre_drop.setValue(2.0)
         self.profile.setCurrentIndex(0)
@@ -1652,7 +1670,7 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.progress_status.clear()
         self.progress_status.hide()
-        for key in ("music", "cover", "output", "promo/bass_effect", "promo/detect_drop", "promo/pre_drop"):
+        for key in ("music", "cover", "output", "promo/bass_effect", "promo/mute_original_video_audio", "promo/detect_drop", "promo/pre_drop"):
             self.settings.remove(key)
         self.validate()
 
@@ -1668,12 +1686,14 @@ class MainWindow(QMainWindow):
             duration=self.duration.value(),
             pre_drop=self.pre_drop.value(),
             bass_effect=self.bass_effect.isChecked(),
+            mute_original_video_audio=self.mute_original_video_audio.isChecked(),
             output_size=self.profile.currentData(),
             preset=self.encoding_speed.currentData(),
             crf=self.crf.value(),
             audio_bitrate=self.audio_bitrate.currentData(),
         )
         self.settings.setValue("promo/bass_effect", self.bass_effect.isChecked())
+        self.settings.setValue("promo/mute_original_video_audio", self.mute_original_video_audio.isChecked())
         self.settings.setValue("promo/detect_drop", self.detect_drop.isChecked())
         self.settings.setValue("promo/pre_drop", self.pre_drop.value())
         self.worker = RenderWorker(
@@ -1714,6 +1734,7 @@ class MainWindow(QMainWindow):
             "cover": self.cover.path,
             "output": self.output.path,
             "bass_effect": self.bass_effect.isChecked(),
+            "mute_original_video_audio": self.mute_original_video_audio.isChecked(),
             "detect_drop": self.detect_drop.isChecked(),
             "pre_drop": self.pre_drop.value(),
             "tracks": [

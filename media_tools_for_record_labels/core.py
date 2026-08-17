@@ -16,8 +16,8 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 import soundfile as sf
-from moviepy import AudioFileClip, VideoClip, VideoFileClip
-from moviepy.audio.fx import AudioFadeIn, AudioFadeOut
+from moviepy import AudioFileClip, CompositeAudioClip, VideoClip, VideoFileClip
+from moviepy.audio.fx import AudioFadeIn, AudioFadeOut, AudioLoop
 from moviepy.video.fx import FadeIn, FadeOut
 from PIL import Image, ImageOps
 from proglog import ProgressBarLogger
@@ -54,6 +54,7 @@ class RenderSettings:
     pre_drop: float = 2.0
     fade: float = 0.5
     bass_effect: bool = True
+    mute_original_video_audio: bool = True
     output_size: tuple[int, int] | None = None
     preset: str = "medium"
     crf: int = 18
@@ -379,7 +380,10 @@ def render_track(
         )
         visual_clip: VideoFileClip | None = None
         if cover_path.suffix.lower() in VIDEO_EXTENSIONS:
-            visual_clip = VideoFileClip(os.fspath(cover_path), audio=False)
+            visual_clip = VideoFileClip(
+                os.fspath(cover_path),
+                audio=not settings.mute_original_video_audio,
+            )
             if visual_clip.duration <= 0:
                 raise RuntimeError(f"{cover_path.name} contains no usable video.")
             background = None
@@ -403,7 +407,11 @@ def render_track(
             return _radial_blur(frame, float(envelope[index]))
 
         fade = min(settings.fade, actual_duration / 2)
-        audio = AudioFadeOut(fade).apply(AudioFadeIn(fade).apply(AudioFileClip(os.fspath(trimmed))))
+        music_audio = AudioFadeOut(fade).apply(AudioFadeIn(fade).apply(AudioFileClip(os.fspath(trimmed))))
+        audio = music_audio
+        if visual_clip is not None and visual_clip.audio is not None and not settings.mute_original_video_audio:
+            original_audio = AudioLoop(duration=actual_duration).apply(visual_clip.audio)
+            audio = CompositeAudioClip([music_audio, original_audio]).with_duration(actual_duration)
         video = VideoClip(make_frame, duration=actual_duration)
         video = FadeOut(fade).apply(FadeIn(fade).apply(video)).with_audio(audio)
         # MoviePy otherwise derives a relative temporary-audio filename from the
@@ -426,8 +434,10 @@ def render_track(
                 logger=_MoviePyLogger(progress),
             )
         finally:
-            audio.close()
             video.close()
+            audio.close()
+            if audio is not music_audio:
+                music_audio.close()
             if visual_clip is not None:
                 visual_clip.close()
             if should_cancel():

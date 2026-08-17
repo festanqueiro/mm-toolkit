@@ -16,7 +16,8 @@ Tab icons are bundled from [Google Material Icons](https://fonts.google.com/icon
 - Pick and validate a PNG, JPEG, WebP, or TIFF image, or an MP4, MOV, M4V, MKV, AVI, or WebM video.
 - Pick a writable export folder.
 - Generate one H.264/AAC MP4 per track at the visual's native dimensions and aspect ratio.
-- Loop video visuals when they are shorter than the selected audio clip; the source video's audio is replaced by the selected music.
+- Loop video visuals when they are shorter than the selected audio clip.
+- Mute the original video's sound by default, or keep it and mix it with the selected music by clearing **Mute original video sound**.
 - Keep the UI responsive and show current-track and overall rendering progress.
 - Remember the last selected paths.
 - Detect the main bass-energy drop and animate the original punchy zoom-blur effect.
