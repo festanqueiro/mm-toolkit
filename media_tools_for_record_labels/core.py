@@ -40,7 +40,7 @@ ProgressCallback = Callable[[int, str], None]
 
 @dataclass(frozen=True)
 class RenderSettings:
-    size: int = 2000
+    size: int | None = None
     fps: int = 24
     duration: float = 60.0
     pre_drop: float = 2.0
@@ -194,6 +194,17 @@ def _radial_blur(image: np.ndarray, strength: float) -> np.ndarray:
     return (accumulator / BLUR_SAMPLES).astype(np.uint8)
 
 
+def _load_artwork(cover_path: Path, size: int | None) -> np.ndarray:
+    with Image.open(cover_path) as image:
+        artwork = image.convert("RGB")
+        if size is not None:
+            artwork = artwork.resize((size, size), Image.Resampling.LANCZOS)
+        elif artwork.width % 2 or artwork.height % 2:
+            # H.264 yuv420p requires even dimensions. At most one edge pixel is removed.
+            artwork = artwork.crop((0, 0, artwork.width - artwork.width % 2, artwork.height - artwork.height % 2))
+        return np.array(artwork, dtype=np.uint8)
+
+
 class _MoviePyLogger(ProgressBarLogger):
     def __init__(self, callback: Callable[[float], None]):
         super().__init__()
@@ -245,11 +256,7 @@ def render_track(
             if settings.bass_effect
             else None
         )
-        with Image.open(cover_path) as image:
-            background = np.array(
-                image.convert("RGB").resize((settings.size, settings.size), Image.Resampling.LANCZOS),
-                dtype=np.uint8,
-            )
+        background = _load_artwork(cover_path, settings.size)
 
         def make_frame(time: float) -> np.ndarray:
             if envelope is None:

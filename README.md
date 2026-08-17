@@ -10,7 +10,7 @@ The macOS bundle, Windows executable, and application windows use the transparen
 - Supports WAV, AIFF, FLAC, MP3, M4A, AAC, and OGG input through FFmpeg.
 - Pick and validate PNG, JPEG, WebP, or TIFF artwork.
 - Pick a writable export folder.
-- Generate one H.264/AAC MP4 per track.
+- Generate one H.264/AAC MP4 per track at the artwork's native dimensions and aspect ratio.
 - Keep the UI responsive and show current-track and overall rendering progress.
 - Remember the last selected paths.
 - Detect the main bass-energy drop and animate the original punchy zoom-blur effect.
@@ -41,7 +41,7 @@ python -m pip install -r requirements.txt
 python -m media_tools_for_record_labels
 ```
 
-Rendering at the default 2000×2000, 24 fps, 60 seconds is intentionally compute-heavy.
+Rendering large native-resolution artwork at 24 fps for 60 seconds can be compute-heavy.
 
 ## Build the macOS app
 
@@ -67,7 +67,7 @@ PyInstaller must build each platform on that platform; a Windows executable cann
 
 ## Defaults inherited from the original script
 
-- 2000×2000 square output
+- Artwork-native output resolution (odd dimensions are reduced by one pixel for H.264 compatibility)
 - 24 fps
 - 60-second snippet
 - Snippet begins 2 seconds before the detected drop

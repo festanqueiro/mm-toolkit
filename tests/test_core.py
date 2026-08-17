@@ -6,6 +6,7 @@ from PIL import Image
 from media_tools_for_record_labels.core import (
     AUDIO_EXTENSIONS,
     RenderSettings,
+    _load_artwork,
     find_audio_files,
     format_timestamp,
     parse_timestamp,
@@ -37,6 +38,14 @@ def test_render_defaults_preserve_original_effect() -> None:
     assert settings.bass_effect is True
     assert settings.pre_drop == 2.0
     assert settings.duration == 60.0
+    assert settings.size is None
+
+
+def test_artwork_keeps_native_aspect_ratio_and_h264_dimensions(tmp_path: Path) -> None:
+    portrait = tmp_path / "portrait.png"
+    Image.new("RGB", (801, 1201), "magenta").save(portrait)
+    artwork = _load_artwork(portrait, None)
+    assert artwork.shape == (1200, 800, 3)
 
 
 def test_find_audio_files_is_filtered_and_sorted(tmp_path: Path) -> None:
