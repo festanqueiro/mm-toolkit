@@ -1268,11 +1268,11 @@ class MainWindow(QMainWindow):
         artwork_layout.addWidget(self.artwork_preview)
         input_form.addRow("Image or video", artwork_row)
         input_form.addRow("", self.cover_status)
-        input_form.addRow(self.mute_original_video_audio_label, self.mute_original_video_audio)
 
         effects_form = QFormLayout()
         effects_form.setSpacing(12)
         effects_form.addRow("Visual effect", self.bass_effect)
+        effects_form.addRow(self.mute_original_video_audio_label, self.mute_original_video_audio)
         effects_form.addRow("Video", self.video_fade)
         effects_form.addRow("Audio", self.audio_fade)
 
