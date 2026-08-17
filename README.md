@@ -17,6 +17,7 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 - Turn the bass-reactive zoom blur on or off; when off, the artwork remains static.
 - Configure how many seconds before the detected drop the snippet begins (default: 2 seconds).
 - Preview the selected artwork and play the first detected track in the system viewer/player.
+- Clear the complete form and saved selections to start fresh.
 
 ## Livestream Clips tab
 
@@ -28,6 +29,11 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 - Export accurately timed, broadly compatible H.264/AAC MP4 files.
 - Follow overall FFmpeg progress while clips are rendered.
 - Play the selected source recording in the system video player before cutting.
+- Clear the source, export folder, timestamps, progress, and saved selections.
+
+## About tab
+
+Displays the transparent full brand lockup, current application version, open-source description, and GitHub repository link.
 
 ## Run on macOS during development
 

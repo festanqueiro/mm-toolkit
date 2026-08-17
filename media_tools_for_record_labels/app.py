@@ -7,8 +7,8 @@ import sys
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFont, QIcon
+from PySide6.QtCore import QSettings, QThread, Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -40,6 +40,7 @@ from .core import (
     validate_cover,
     validate_video,
 )
+from . import __version__
 
 
 def open_preview(parent: QWidget, path: str | Path) -> None:
@@ -189,6 +190,8 @@ class ClipsTab(QWidget):
         self.generate = QPushButton("Create Clips")
         self.generate.setMinimumHeight(44)
         self.generate.clicked.connect(self.start_generation)
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.clicked.connect(self.clear)
         self.progress_status = QLabel("")
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
@@ -207,7 +210,11 @@ class ClipsTab(QWidget):
         layout.addWidget(self.clip_status)
         layout.addWidget(self.progress_status)
         layout.addWidget(self.progress)
-        layout.addWidget(self.generate)
+        actions = QHBoxLayout()
+        actions.addWidget(self.clear_button)
+        actions.addStretch()
+        actions.addWidget(self.generate)
+        layout.addLayout(actions)
 
         self.source.changed.connect(self.validate)
         self.output.changed.connect(self.validate)
@@ -285,8 +292,22 @@ class ClipsTab(QWidget):
         self.output.set_enabled(enabled)
         self.add_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
+        self.clear_button.setEnabled(enabled)
         if not enabled:
             self.preview_source.setEnabled(False)
+
+    def clear(self) -> None:
+        self.source.set_path("")
+        self.output.set_path("")
+        self.table.setRowCount(0)
+        self.add_row()
+        self.progress.setValue(0)
+        self.progress.hide()
+        self.progress_status.clear()
+        self.progress_status.hide()
+        self.settings.remove("clips/source")
+        self.settings.remove("clips/output")
+        self.validate()
 
     def start_generation(self) -> None:
         if not self.validate():
@@ -328,6 +349,51 @@ class ClipsTab(QWidget):
         self.validate()
         if worker:
             worker.deleteLater()
+
+
+class AboutTab(QWidget):
+    def __init__(self):
+        super().__init__()
+        logo = QLabel()
+        pixmap = QPixmap(os.fspath(bundled_asset("Media tools app - full logo no bg.png")))
+        logo.setPixmap(
+            pixmap.scaled(
+                300,
+                300,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        title = QLabel("Media Tools for Record Labels")
+        title.setFont(QFont("", 22, QFont.Weight.DemiBold))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version = QLabel(f"Version {__version__}")
+        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        description = QLabel(
+            "Open-source desktop utilities for creating music promo videos "
+            "and cutting clips from long recordings."
+        )
+        description.setWordWrap(True)
+        description.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        repository = QLabel(
+            '<a href="https://github.com/festanqueiro/record-label-mediatools">'
+            "github.com/festanqueiro/record-label-mediatools</a>"
+        )
+        repository.setOpenExternalLinks(True)
+        repository.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 28, 40, 28)
+        layout.addStretch()
+        layout.addWidget(logo)
+        layout.addWidget(title)
+        layout.addWidget(version)
+        layout.addSpacing(10)
+        layout.addWidget(description)
+        layout.addWidget(repository)
+        layout.addStretch()
 
 
 class MainWindow(QMainWindow):
@@ -392,6 +458,8 @@ class MainWindow(QMainWindow):
         self.generate.setMinimumHeight(44)
         self.generate.setEnabled(False)
         self.generate.clicked.connect(self.start_generation)
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.clicked.connect(self.clear)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
@@ -410,12 +478,18 @@ class MainWindow(QMainWindow):
         layout.addWidget(divider)
         layout.addWidget(self.progress_status)
         layout.addWidget(self.progress)
-        layout.addWidget(self.generate)
+        actions = QHBoxLayout()
+        actions.addWidget(self.clear_button)
+        actions.addStretch()
+        actions.addWidget(self.generate)
+        layout.addLayout(actions)
         layout.addStretch()
         self.clips = ClipsTab(self.settings)
+        self.about = AboutTab()
         tabs = QTabWidget()
         tabs.addTab(container, "Promo Videos")
         tabs.addTab(self.clips, "Livestream Clips")
+        tabs.addTab(self.about, "About")
         self.setCentralWidget(tabs)
 
         self.music.changed.connect(self.validate)
@@ -461,9 +535,24 @@ class MainWindow(QMainWindow):
             row.set_enabled(enabled)
         self.bass_effect.setEnabled(enabled)
         self.pre_drop.setEnabled(enabled)
+        self.clear_button.setEnabled(enabled)
         if not enabled:
             self.preview_artwork.setEnabled(False)
             self.preview_audio.setEnabled(False)
+
+    def clear(self) -> None:
+        self.music.set_path("")
+        self.cover.set_path("")
+        self.output.set_path("")
+        self.bass_effect.setChecked(True)
+        self.pre_drop.setValue(2.0)
+        self.progress.setValue(0)
+        self.progress.hide()
+        self.progress_status.clear()
+        self.progress_status.hide()
+        for key in ("music", "cover", "output", "promo/bass_effect", "promo/pre_drop"):
+            self.settings.remove(key)
+        self.validate()
 
     def start_generation(self) -> None:
         if not self.validate():
