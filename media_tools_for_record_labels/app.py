@@ -303,6 +303,8 @@ class ClipsTab(QWidget):
         self.generate = QPushButton("Create Clips")
         self.generate.setMinimumHeight(44)
         self.generate.clicked.connect(self.start_generation)
+        self.generate_requirements = QLabel("")
+        self.generate_requirements.setWordWrap(True)
         self.clear_button = QPushButton("Clear")
         self.clear_button.clicked.connect(self.clear)
         self.cancel_button = QPushButton("Cancel")
@@ -349,7 +351,7 @@ class ClipsTab(QWidget):
         actions = QHBoxLayout()
         actions.addWidget(self.clear_button)
         actions.addWidget(self.cancel_button)
-        actions.addStretch()
+        actions.addWidget(self.generate_requirements, 1)
         actions.addWidget(self.generate)
         layout.addLayout(actions)
 
@@ -456,6 +458,21 @@ class ClipsTab(QWidget):
         clips, clip_message = self.parsed_clips()
         self.clip_status.setText(clip_message)
         ready = source_ok and output_ok and bool(clips) and self.worker is None
+        missing = []
+        if not source_ok:
+            missing.append("choose a valid source video")
+        if not clips:
+            missing.append(clip_message.rstrip("."))
+        if not output_ok:
+            missing.append("choose a writable export folder")
+        if self.worker is not None:
+            action_message = "Creating clips…"
+        elif missing:
+            action_message = "To enable Create Clips: " + "; ".join(missing) + "."
+        else:
+            action_message = "✓ Ready to create clips."
+        self.generate_requirements.setText(action_message)
+        self.generate.setToolTip(action_message)
         self.preview_source.setEnabled(source_ok and self.worker is None)
         self.generate.setEnabled(ready)
         return ready
@@ -856,6 +873,8 @@ class MainWindow(QMainWindow):
         self.generate.setMinimumHeight(44)
         self.generate.setEnabled(False)
         self.generate.clicked.connect(self.start_generation)
+        self.generate_requirements = QLabel("")
+        self.generate_requirements.setWordWrap(True)
         self.clear_button = QPushButton("Clear")
         self.clear_button.clicked.connect(self.clear)
         self.cancel_button = QPushButton("Cancel")
@@ -892,7 +911,7 @@ class MainWindow(QMainWindow):
         actions = QHBoxLayout()
         actions.addWidget(self.clear_button)
         actions.addWidget(self.cancel_button)
-        actions.addStretch()
+        actions.addWidget(self.generate_requirements, 1)
         actions.addWidget(self.generate)
         layout.addLayout(actions)
         layout.addStretch()
@@ -985,6 +1004,21 @@ class MainWindow(QMainWindow):
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
         self.output_status.setText("✓ Export folder is writable." if output_ok else "Choose a writable export folder.")
         ready = music_ok and cover_ok and output_ok and self.worker is None
+        missing = []
+        if not music_ok:
+            missing.append("choose supported audio")
+        if not cover_ok:
+            missing.append("choose valid artwork")
+        if not output_ok:
+            missing.append("choose a writable export folder")
+        if self.worker is not None:
+            action_message = "Generating promo videos…"
+        elif missing:
+            action_message = "To enable Generate: " + "; ".join(missing) + "."
+        else:
+            action_message = "✓ Ready to generate promo videos."
+        self.generate_requirements.setText(action_message)
+        self.generate.setToolTip(action_message)
         if tracks:
             total_seconds = len(tracks) * self.duration.value()
             free_gb = shutil.disk_usage(output_path).free / 1024**3 if output_ok else 0
