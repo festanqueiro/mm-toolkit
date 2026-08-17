@@ -1,14 +1,18 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PIL import Image
+import soundfile as sf
 
 from media_tools_for_record_labels.core import (
     AUDIO_EXTENSIONS,
     RenderSettings,
     _load_artwork,
+    convert_media,
     find_audio_files,
     format_timestamp,
+    media_kind,
     parse_timestamp,
     resolve_output,
     safe_filename,
@@ -91,3 +95,20 @@ def test_artwork_output_profile_letterboxes_without_distortion(tmp_path: Path) -
     Image.new("RGB", (400, 200), "magenta").save(artwork_path)
     artwork = _load_artwork(artwork_path, None, (108, 192))
     assert artwork.shape == (192, 108, 3)
+
+
+def test_media_kind_detects_audio_and_video() -> None:
+    assert media_kind("track.aiff") == "audio"
+    assert media_kind("track.mp3") == "audio"
+    assert media_kind("recording.mkv") == "video"
+    assert media_kind("notes.txt") is None
+
+
+def test_convert_audio_wav_to_flac(tmp_path: Path) -> None:
+    source = tmp_path / "Source Audio.wav"
+    samples = np.zeros(2205, dtype=np.float32)
+    sf.write(source, samples, 44100)
+    output_dir = tmp_path / "exports"
+    results = convert_media([source], output_dir, "flac")
+    assert results == [output_dir / "Source Audio.flac"]
+    assert results[0].is_file()

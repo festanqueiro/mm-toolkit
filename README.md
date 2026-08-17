@@ -37,6 +37,14 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 - Give every clip a descriptive title and cancel active clip creation safely.
 - Preview video in the app, scrub the timeline, and set clip start/end from the current playhead.
 
+## Converter tab
+
+- Select one or many audio files and convert them to MP3, WAV, AIFF, FLAC, M4A, AAC, or OGG.
+- Select one or many video files and convert them to MP4, MOV, MKV, AVI, or WebM.
+- Automatically detect audio versus video and prevent incompatible mixed batches.
+- Preview selected inputs, choose a writable export folder, follow progress, and cancel safely.
+- Preserve original filenames while applying the shared overwrite, skip, or numbered-copy policy.
+
 ## About tab
 
 Displays the transparent full brand lockup, current application version, open-source description, and GitHub repository link.
@@ -49,7 +57,7 @@ Displays the transparent full brand lockup, current application version, open-so
 
 ## History tab
 
-Stores up to 20 recent jobs in local OS application settings. Jobs can be loaded back into either tool and their output folder can be reopened. History data is never committed to the repository.
+Stores up to 20 recent jobs in local OS application settings. Jobs can be loaded back into their tool and their output folder can be reopened. History data is never committed to the repository.
 
 ## Run on macOS during development
 

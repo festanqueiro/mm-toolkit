@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -42,13 +43,17 @@ from PySide6.QtWidgets import (
 )
 
 from .core import (
+    AUDIO_OUTPUT_FORMATS,
     CancelledError,
     ClipRequest,
     RenderSettings,
+    VIDEO_OUTPUT_FORMATS,
+    convert_media,
     cut_video_clips,
     find_audio_files,
     format_timestamp,
     generate_videos,
+    media_kind,
     parse_timestamp,
     validate_cover,
     validate_video,
@@ -167,6 +172,38 @@ class ClipWorker(QThread):
                 self.output,
                 lambda percent, status: self.progress.emit(percent, status),
                 self.naming,
+                self.conflict,
+                self.isInterruptionRequested,
+            )
+            self.succeeded.emit([os.fspath(path) for path in results])
+        except CancelledError:
+            self.cancelled.emit()
+        except Exception as exc:
+            details = traceback.format_exc()
+            print(details, file=sys.stderr)
+            self.failed.emit(str(exc), details)
+
+
+class ConverterWorker(QThread):
+    progress = Signal(int, str)
+    succeeded = Signal(list)
+    failed = Signal(str, str)
+    cancelled = Signal()
+
+    def __init__(self, sources: list[Path], output: Path, output_format: str, conflict: str):
+        super().__init__()
+        self.sources = sources
+        self.output = output
+        self.output_format = output_format
+        self.conflict = conflict
+
+    def run(self) -> None:
+        try:
+            results = convert_media(
+                self.sources,
+                self.output,
+                self.output_format,
+                lambda percent, status: self.progress.emit(percent, status),
                 self.conflict,
                 self.isInterruptionRequested,
             )
@@ -601,6 +638,259 @@ class ClipsTab(QWidget):
             worker.deleteLater()
 
 
+class ConverterTab(QWidget):
+    job_completed = Signal(object)
+
+    def __init__(self, settings: QSettings):
+        super().__init__()
+        self.settings = settings
+        self.worker: ConverterWorker | None = None
+        title = QLabel("Converter")
+        title.setFont(QFont("", 24, QFont.Weight.DemiBold))
+        subtitle = QLabel("Convert batches of audio or video files into another common format.")
+        self.files = QListWidget()
+        self.files.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.choose_button = QPushButton("Choose Audio or Video Files…")
+        self.choose_button.clicked.connect(self.choose_files)
+        self.remove_button = QPushButton("Remove Selected")
+        self.remove_button.clicked.connect(self.remove_selected)
+        self.preview_button = QPushButton("▶ Preview Selected")
+        self.preview_button.clicked.connect(self.preview_selected)
+        self.input_status = QLabel("Choose one or more audio files or one or more video files.")
+        self.input_status.setWordWrap(True)
+        self.media_type = QLabel("Not detected")
+        self.output_format = QComboBox()
+        self.output_format.currentIndexChanged.connect(self.validate)
+        self.output = PathRow("Choose converter export folder", "directory")
+        self.output.changed.connect(self.validate)
+        self.output_status = QLabel("Choose an export folder.")
+        self.output_status.setWordWrap(True)
+
+        input_layout = QVBoxLayout()
+        input_layout.addWidget(self.choose_button)
+        input_layout.addWidget(self.files, 1)
+        input_actions = QHBoxLayout()
+        input_actions.addWidget(self.remove_button)
+        input_actions.addWidget(self.preview_button)
+        input_layout.addLayout(input_actions)
+        input_layout.addWidget(self.input_status)
+        output_form = QFormLayout()
+        output_form.setSpacing(12)
+        output_form.addRow("Detected media", self.media_type)
+        output_form.addRow("Convert to", self.output_format)
+        output_form.addRow("Export folder", self.output)
+        output_form.addRow("", self.output_status)
+
+        self.progress_status = QLabel("")
+        self.progress_status.hide()
+        self.progress = QProgressBar()
+        self.progress.hide()
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.clicked.connect(self.clear)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.cancel)
+        self.cancel_button.hide()
+        self.requirements = QLabel("")
+        self.requirements.setWordWrap(True)
+        self.convert_button = QPushButton("Convert Files")
+        self.convert_button.setMinimumHeight(44)
+        self.convert_button.clicked.connect(self.start_conversion)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(14)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        columns = QHBoxLayout()
+        columns.setSpacing(14)
+        columns.addWidget(section_group("Input", input_layout), 1)
+        output_column = QVBoxLayout()
+        output_column.addWidget(section_group("Output", output_form))
+        output_column.addStretch()
+        columns.addLayout(output_column, 1)
+        layout.addLayout(columns, 1)
+        layout.addWidget(self.progress_status)
+        layout.addWidget(self.progress)
+        actions = QHBoxLayout()
+        actions.addWidget(self.clear_button)
+        actions.addWidget(self.cancel_button)
+        actions.addWidget(self.requirements, 1)
+        actions.addWidget(self.convert_button)
+        layout.addLayout(actions)
+
+        default_output = self.settings.value("general/default_output", "")
+        if default_output and Path(default_output).is_dir():
+            self.output.edit.setText(default_output)
+        self.update_formats(None)
+        self.validate()
+
+    def source_paths(self) -> list[Path]:
+        return [Path(self.files.item(index).data(Qt.ItemDataRole.UserRole)) for index in range(self.files.count())]
+
+    def set_files(self, paths: list[str | Path]) -> None:
+        self.files.clear()
+        for path in paths:
+            source = Path(path)
+            item = QListWidgetItem(source.name)
+            item.setToolTip(os.fspath(source))
+            item.setData(Qt.ItemDataRole.UserRole, os.fspath(source))
+            self.files.addItem(item)
+        if self.files.count():
+            self.files.setCurrentRow(0)
+        self.validate()
+
+    def choose_files(self) -> None:
+        selected, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Choose audio or video files",
+            str(Path.home()),
+            "Media (*.mp3 *.wav *.wave *.aif *.aiff *.flac *.m4a *.aac *.ogg *.mp4 *.mov *.m4v *.mkv *.avi *.webm)",
+        )
+        if selected:
+            self.set_files(selected)
+
+    def remove_selected(self) -> None:
+        for item in self.files.selectedItems():
+            self.files.takeItem(self.files.row(item))
+        self.validate()
+
+    def preview_selected(self) -> None:
+        item = self.files.currentItem()
+        if item:
+            open_preview(self, item.data(Qt.ItemDataRole.UserRole))
+
+    def update_formats(self, kind: str | None) -> None:
+        previous = self.output_format.currentText().lower()
+        formats = AUDIO_OUTPUT_FORMATS if kind == "audio" else VIDEO_OUTPUT_FORMATS if kind == "video" else ()
+        self.output_format.blockSignals(True)
+        self.output_format.clear()
+        for output_format in formats:
+            self.output_format.addItem(output_format.upper(), output_format)
+        index = self.output_format.findData(previous)
+        self.output_format.setCurrentIndex(index if index >= 0 else 0)
+        self.output_format.blockSignals(False)
+
+    def validate(self) -> bool:
+        sources = self.source_paths()
+        kinds = {media_kind(path) for path in sources if path.is_file()}
+        kind = next(iter(kinds)) if len(kinds) == 1 and None not in kinds and len(sources) == sum(path.is_file() for path in sources) else None
+        mixed = len(kinds) > 1 or None in kinds
+        current_kind = self.output_format.property("media_kind")
+        if current_kind != kind:
+            self.update_formats(kind)
+            self.output_format.setProperty("media_kind", kind)
+        if not sources:
+            input_message = "Choose one or more audio files or one or more video files."
+        elif mixed:
+            input_message = "Choose audio files or video files in one batch—not both."
+        elif kind is None:
+            input_message = "One or more selected files are missing or unsupported."
+        else:
+            input_message = f"✓ {len(sources)} {kind} file{'s' if len(sources) != 1 else ''} ready."
+        self.input_status.setText(input_message)
+        self.media_type.setText(kind.title() if kind else "Not detected")
+        output_path = Path(self.output.path).expanduser() if self.output.path else None
+        output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
+        self.output_status.setText("✓ Export folder is writable." if output_ok else "Choose a writable export folder.")
+        missing = []
+        if kind is None:
+            missing.append("choose a valid audio-only or video-only batch")
+        if not output_ok:
+            missing.append("choose a writable export folder")
+        if self.worker:
+            message = "Converting files…"
+        elif missing:
+            message = "To enable Convert: " + "; ".join(missing) + "."
+        else:
+            message = f"✓ Ready to convert {len(sources)} file{'s' if len(sources) != 1 else ''} to {self.output_format.currentText()}."
+        self.requirements.setText(message)
+        ready = kind is not None and output_ok and self.output_format.count() > 0 and self.worker is None
+        self.convert_button.setEnabled(ready)
+        self.preview_button.setEnabled(bool(sources) and self.worker is None)
+        self.remove_button.setEnabled(bool(sources) and self.worker is None)
+        return ready
+
+    def set_inputs_enabled(self, enabled: bool) -> None:
+        self.choose_button.setEnabled(enabled)
+        self.files.setEnabled(enabled)
+        self.output_format.setEnabled(enabled)
+        self.output.set_enabled(enabled)
+        self.clear_button.setEnabled(enabled)
+        if not enabled:
+            self.preview_button.setEnabled(False)
+            self.remove_button.setEnabled(False)
+
+    def clear(self) -> None:
+        self.files.clear()
+        self.output.set_path(self.settings.value("general/default_output", ""))
+        self.progress.hide()
+        self.progress_status.hide()
+        self.validate()
+
+    def cancel(self) -> None:
+        if self.worker:
+            self.cancel_button.setEnabled(False)
+            self.progress_status.setText("Cancelling safely…")
+            self.worker.requestInterruption()
+
+    def start_conversion(self) -> None:
+        if not self.validate():
+            return
+        sources = self.source_paths()
+        self.worker = ConverterWorker(
+            sources,
+            Path(self.output.path),
+            self.output_format.currentData(),
+            self.settings.value("general/conflict_policy", "rename"),
+        )
+        self.worker.progress.connect(self.on_progress)
+        self.worker.succeeded.connect(self.on_success)
+        self.worker.failed.connect(self.on_failure)
+        self.worker.cancelled.connect(self.on_cancelled)
+        self.worker.finished.connect(self.worker_finished)
+        self.progress.setValue(0)
+        self.progress.show()
+        self.progress_status.setText("Preparing conversion…")
+        self.progress_status.show()
+        self.set_inputs_enabled(False)
+        self.cancel_button.setEnabled(True)
+        self.cancel_button.show()
+        self.convert_button.setEnabled(False)
+        self.worker.start()
+
+    def on_progress(self, percent: int, status: str) -> None:
+        self.progress.setValue(percent)
+        self.progress_status.setText(status)
+
+    def on_success(self, outputs: list[str]) -> None:
+        self.job_completed.emit({
+            "tool": "converter",
+            "created": datetime.now().isoformat(timespec="seconds"),
+            "source": os.fspath(self.source_paths()[0]) if self.source_paths() else "",
+            "sources": [os.fspath(path) for path in self.source_paths()],
+            "output": self.output.path,
+            "format": self.output_format.currentData(),
+            "outputs": outputs,
+        })
+        if self.settings.value("general/notify_finished", True, type=bool):
+            show_completion(self, "Conversion finished", outputs)
+
+    def on_failure(self, message: str, details: str) -> None:
+        show_error(self, "Conversion failed", message, details)
+
+    def on_cancelled(self) -> None:
+        self.progress_status.setText("Conversion cancelled. Partial files were removed.")
+
+    def worker_finished(self) -> None:
+        worker = self.worker
+        self.worker = None
+        self.set_inputs_enabled(True)
+        self.cancel_button.hide()
+        self.validate()
+        if worker:
+            worker.deleteLater()
+
+
 class SettingsTab(QWidget):
     changed = Signal()
 
@@ -760,7 +1050,11 @@ class HistoryTab(QWidget):
             self.records = []
         self.jobs.clear()
         for record in self.records:
-            tool = "Promo Videos" if record.get("tool") == "promo" else "Livestream Clips"
+            tool = {
+                "promo": "Promo Videos",
+                "clips": "Livestream Clips",
+                "converter": "Converter",
+            }.get(record.get("tool"), "Media Tool")
             source = Path(record.get("source", "")).name or "Unknown input"
             self.jobs.addItem(f"{record.get('created', '')}  •  {tool}  •  {source}")
         enabled = bool(self.records)
@@ -946,12 +1240,14 @@ class MainWindow(QMainWindow):
         layout.addLayout(actions)
         layout.addStretch()
         self.clips = ClipsTab(self.settings)
+        self.converter = ConverterTab(self.settings)
         self.app_settings = SettingsTab(self.settings)
         self.history = HistoryTab(self.settings)
         self.about = AboutTab()
         self.tabs = QTabWidget()
         self.tabs.addTab(container, "Promo Videos")
         self.tabs.addTab(self.clips, "Livestream Clips")
+        self.tabs.addTab(self.converter, "Converter")
         self.tabs.addTab(self.history, "History")
         self.tabs.addTab(self.app_settings, "Settings")
         self.tabs.addTab(self.about, "About")
@@ -962,6 +1258,7 @@ class MainWindow(QMainWindow):
         self.output.changed.connect(self.validate)
         self.app_settings.changed.connect(self.apply_app_settings)
         self.clips.job_completed.connect(self.add_history)
+        self.converter.job_completed.connect(self.add_history)
         self.history.load_requested.connect(self.load_history_job)
         self.restore_paths()
         self.apply_app_settings()
@@ -982,6 +1279,8 @@ class MainWindow(QMainWindow):
                 self.output.set_path(default_output)
             if not self.clips.output.path:
                 self.clips.output.set_path(default_output)
+            if not self.converter.output.path:
+                self.converter.output.set_path(default_output)
 
     def add_history(self, record: dict) -> None:
         try:
@@ -1004,7 +1303,7 @@ class MainWindow(QMainWindow):
             profile = record.get("profile")
             self.profile.setCurrentIndex(max(0, self.profile.findData(tuple(profile) if profile else None)))
             self.tabs.setCurrentIndex(0)
-        else:
+        elif record.get("tool") == "clips":
             self.clips.source.set_path(record.get("source", ""))
             self.clips.output.set_path(record.get("output", ""))
             self.clips.table.setRowCount(0)
@@ -1018,6 +1317,13 @@ class MainWindow(QMainWindow):
             if self.clips.table.rowCount() == 0:
                 self.clips.add_row()
             self.tabs.setCurrentIndex(1)
+        elif record.get("tool") == "converter":
+            self.converter.set_files(record.get("sources", []))
+            self.converter.output.set_path(record.get("output", ""))
+            format_index = self.converter.output_format.findData(record.get("format", ""))
+            if format_index >= 0:
+                self.converter.output_format.setCurrentIndex(format_index)
+            self.tabs.setCurrentIndex(2)
 
     def validate(self) -> bool:
         tracks = find_audio_files(self.music.path)
@@ -1205,7 +1511,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):  # noqa: N802, ANN001
         promo_running = self.worker and self.worker.isRunning()
         clips_running = self.clips.worker and self.clips.worker.isRunning()
-        if promo_running or clips_running:
+        converter_running = self.converter.worker and self.converter.worker.isRunning()
+        if promo_running or clips_running or converter_running:
             QMessageBox.warning(self, "Rendering in progress", "Wait for rendering to finish before closing the app.")
             event.ignore()
             return

@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -25,6 +26,8 @@ from scipy.signal import butter, sosfiltfilt
 AUDIO_EXTENSIONS = {".wav", ".wave", ".aif", ".aiff", ".flac", ".mp3", ".m4a", ".aac", ".ogg"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
+AUDIO_OUTPUT_FORMATS = ("mp3", "wav", "aiff", "flac", "m4a", "aac", "ogg")
+VIDEO_OUTPUT_FORMATS = ("mp4", "mov", "mkv", "avi", "webm")
 
 BASS_CUTOFF_HZ = 150
 BLUR_SAMPLES = 6
@@ -144,6 +147,15 @@ def validate_cover(path: str | Path) -> tuple[bool, str]:
     except Exception:
         return False, "The selected artwork could not be read."
     return True, "Artwork ready."
+
+
+def media_kind(path: str | Path) -> str | None:
+    suffix = Path(path).suffix.lower()
+    if suffix in AUDIO_EXTENSIONS:
+        return "audio"
+    if suffix in VIDEO_EXTENSIONS:
+        return "video"
+    return None
 
 
 def require_ffmpeg() -> str:
@@ -481,4 +493,72 @@ def cut_video_clips(
         outputs.append(output)
     if callback:
         callback(100, f"Finished {len(outputs)} clip{'s' if len(outputs) != 1 else ''}")
+    return outputs
+
+
+def convert_media(
+    sources: Iterable[Path],
+    output_dir: Path,
+    output_format: str,
+    callback: ProgressCallback | None = None,
+    conflict_policy: str = "rename",
+    should_cancel: CancelCheck = lambda: False,
+) -> list[Path]:
+    """Batch-convert audio or video files with FFmpeg."""
+    files = list(sources)
+    if not files:
+        raise ValueError("Choose at least one media file.")
+    kinds = {media_kind(path) for path in files}
+    if None in kinds or len(kinds) != 1:
+        raise ValueError("Choose either audio files or video files, not a mixed selection.")
+    kind = kinds.pop()
+    allowed = AUDIO_OUTPUT_FORMATS if kind == "audio" else VIDEO_OUTPUT_FORMATS
+    output_format = output_format.lower().lstrip(".")
+    if output_format not in allowed:
+        raise ValueError(f"{output_format.upper()} is not a supported {kind} output format.")
+    ffmpeg = require_ffmpeg()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    outputs: list[Path] = []
+    audio_args = {
+        "mp3": ["-vn", "-c:a", "libmp3lame", "-q:a", "2"],
+        "wav": ["-vn", "-c:a", "pcm_s24le"],
+        "aiff": ["-vn", "-c:a", "pcm_s24be"],
+        "flac": ["-vn", "-c:a", "flac"],
+        "m4a": ["-vn", "-c:a", "aac", "-b:a", "256k"],
+        "aac": ["-vn", "-c:a", "aac", "-b:a", "256k"],
+        "ogg": ["-vn", "-c:a", "libvorbis", "-q:a", "6"],
+    }
+    video_args = {
+        "mp4": ["-c:v", "libx264", "-crf", "18", "-preset", "fast", "-c:a", "aac", "-b:a", "256k", "-pix_fmt", "yuv420p", "-movflags", "+faststart"],
+        "mov": ["-c:v", "libx264", "-crf", "18", "-preset", "fast", "-c:a", "aac", "-b:a", "256k", "-pix_fmt", "yuv420p", "-movflags", "+faststart"],
+        "mkv": ["-c:v", "libx264", "-crf", "18", "-preset", "fast", "-c:a", "aac", "-b:a", "256k", "-pix_fmt", "yuv420p"],
+        "avi": ["-c:v", "mpeg4", "-q:v", "3", "-c:a", "libmp3lame", "-q:a", "2"],
+        "webm": ["-c:v", "libvpx-vp9", "-crf", "28", "-b:v", "0", "-c:a", "libopus", "-b:a", "192k"],
+    }
+    for index, source in enumerate(files):
+        if should_cancel():
+            raise CancelledError("Conversion cancelled.")
+        output = resolve_output(output_dir / f"{source.stem}.{output_format}", conflict_policy)
+        if output is None:
+            continue
+        if callback:
+            callback(round(index / len(files) * 100), f"Converting {source.name} ({index + 1} of {len(files)})")
+        command = [ffmpeg, "-y", "-v", "error", "-i", os.fspath(source)]
+        command.extend(audio_args[output_format] if kind == "audio" else video_args[output_format])
+        command.append(os.fspath(output))
+        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+        while process.poll() is None:
+            if should_cancel():
+                process.terminate()
+                process.wait()
+                output.unlink(missing_ok=True)
+                raise CancelledError("Conversion cancelled.")
+            time.sleep(0.1)
+        stderr = process.stderr.read() if process.stderr else ""
+        if process.returncode != 0:
+            output.unlink(missing_ok=True)
+            raise RuntimeError(stderr.strip() or f"FFmpeg failed while converting {source.name}.")
+        outputs.append(output)
+    if callback:
+        callback(100, f"Finished {len(outputs)} conversion{'s' if len(outputs) != 1 else ''}")
     return outputs
