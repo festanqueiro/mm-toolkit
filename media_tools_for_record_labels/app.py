@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSpinBox,
+    QStyle,
     QTabWidget,
     QTableWidget,
     QVBoxLayout,
@@ -112,6 +113,12 @@ def section_group(title: str, content_layout) -> QGroupBox:  # noqa: ANN001
         "}"
     )
     return group
+
+
+def page_title(text: str) -> QLabel:
+    title = QLabel(text)
+    title.setFont(QFont("", 24, QFont.Weight.DemiBold))
+    return title
 
 
 class RenderWorker(QThread):
@@ -285,8 +292,7 @@ class ClipsTab(QWidget):
         super().__init__()
         self.settings = settings
         self.worker: ClipWorker | None = None
-        title = QLabel("Livestream Clips")
-        title.setFont(QFont("", 24, QFont.Weight.DemiBold))
+        title = page_title("Livestream Clips")
         subtitle = QLabel(
             "Create precisely timed social clips from a long recording. "
             "Use HH:MM:SS, MM:SS, or seconds. End is optional; duration defaults to 60 seconds."
@@ -368,7 +374,7 @@ class ClipsTab(QWidget):
         self.progress_status.hide()
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 18, 28, 18)
+        layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(10)
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -645,8 +651,7 @@ class ConverterTab(QWidget):
         super().__init__()
         self.settings = settings
         self.worker: ConverterWorker | None = None
-        title = QLabel("Converter")
-        title.setFont(QFont("", 24, QFont.Weight.DemiBold))
+        title = page_title("Converter")
         subtitle = QLabel("Convert batches of audio or video files into another common format.")
         self.files = QListWidget()
         self.files.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -897,8 +902,7 @@ class SettingsTab(QWidget):
     def __init__(self, settings: QSettings):
         super().__init__()
         self.settings = settings
-        title = QLabel("Settings")
-        title.setFont(QFont("", 24, QFont.Weight.DemiBold))
+        title = page_title("Settings")
         subtitle = QLabel("Defaults shared by all Media Tools features.")
         self.default_output = PathRow("Choose default export folder", "directory")
         self.output_status = QLabel("")
@@ -971,6 +975,7 @@ class SettingsTab(QWidget):
 class AboutTab(QWidget):
     def __init__(self):
         super().__init__()
+        page_heading = page_title("About")
         logo = QLabel()
         pixmap = QPixmap(os.fspath(bundled_asset("Media tools app - full logo no bg.png")))
         logo.setPixmap(
@@ -1002,7 +1007,8 @@ class AboutTab(QWidget):
         repository.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 28, 40, 28)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.addWidget(page_heading)
         layout.addStretch()
         layout.addWidget(logo)
         layout.addWidget(title)
@@ -1019,8 +1025,7 @@ class HistoryTab(QWidget):
     def __init__(self, settings: QSettings):
         super().__init__()
         self.settings = settings
-        title = QLabel("History")
-        title.setFont(QFont("", 24, QFont.Weight.DemiBold))
+        title = page_title("History")
         subtitle = QLabel("Recent jobs are stored only in your local application settings.")
         self.jobs = QListWidget()
         self.load_button = QPushButton("Load Job")
@@ -1091,8 +1096,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(820, 620)
         self.resize(1100, 820)
 
-        title = QLabel("Promo Videos")
-        title.setFont(QFont("", 24, QFont.Weight.DemiBold))
+        title = page_title("Promo Videos")
         subtitle = QLabel("Turn audio and cover artwork into promo videos at the artwork's native resolution.")
         subtitle.setWordWrap(True)
 
@@ -1245,12 +1249,13 @@ class MainWindow(QMainWindow):
         self.history = HistoryTab(self.settings)
         self.about = AboutTab()
         self.tabs = QTabWidget()
-        self.tabs.addTab(container, "Promo Videos")
-        self.tabs.addTab(self.clips, "Livestream Clips")
-        self.tabs.addTab(self.converter, "Converter")
-        self.tabs.addTab(self.history, "History")
-        self.tabs.addTab(self.app_settings, "Settings")
-        self.tabs.addTab(self.about, "About")
+        standard_icon = self.style().standardIcon
+        self.tabs.addTab(container, standard_icon(QStyle.StandardPixmap.SP_MediaPlay), "Promo Videos")
+        self.tabs.addTab(self.clips, standard_icon(QStyle.StandardPixmap.SP_FileDialogDetailedView), "Livestream Clips")
+        self.tabs.addTab(self.converter, standard_icon(QStyle.StandardPixmap.SP_BrowserReload), "Converter")
+        self.tabs.addTab(self.history, standard_icon(QStyle.StandardPixmap.SP_FileDialogContentsView), "History")
+        self.tabs.addTab(self.app_settings, standard_icon(QStyle.StandardPixmap.SP_ComputerIcon), "Settings")
+        self.tabs.addTab(self.about, standard_icon(QStyle.StandardPixmap.SP_MessageBoxInformation), "About")
         self.setCentralWidget(self.tabs)
 
         self.music.changed.connect(self.validate)
