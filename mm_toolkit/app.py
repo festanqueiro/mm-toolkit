@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -341,6 +343,67 @@ class ClipField(QLineEdit):
     def focusInEvent(self, event) -> None:  # noqa: N802, ANN001
         super().focusInEvent(event)
         self.focused.emit()
+
+
+class DropStartField(QWidget):
+    """Start-time editor with a per-track drop detection action."""
+
+    textChanged = Signal(str)
+    detect_requested = Signal()
+
+    def __init__(self, value: str):
+        super().__init__()
+        self.edit = QLineEdit(value)
+        self.edit.setPlaceholderText("HH:MM:SS")
+        self.edit.textChanged.connect(self.textChanged)
+        self.detect_button = QPushButton("✨")
+        self.detect_button.setFixedSize(34, 30)
+        self.detect_button.setToolTip("Analyze this track and propose a drop start time")
+        self.detect_button.setAccessibleName("Detect drop for this track")
+        self.detect_button.clicked.connect(self.detect_requested)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        layout.addWidget(self.edit, 1)
+        layout.addWidget(self.detect_button)
+
+    def text(self) -> str:
+        return self.edit.text()
+
+    def setText(self, value: str) -> None:  # noqa: N802
+        self.edit.setText(value)
+
+
+class DropDetectionDialog(QDialog):
+    """Confirmation and lead-in selection for per-track drop analysis."""
+
+    def __init__(self, track_name: str, seconds_before: float, parent: QWidget):
+        super().__init__(parent)
+        self.setWindowTitle("Detect drop start")
+        self.setMinimumWidth(420)
+        message = QLabel(
+            f"MM Toolkit will analyze {track_name} and propose a start time based on its main drop."
+        )
+        message.setWordWrap(True)
+        self.seconds_before = QDoubleSpinBox()
+        self.seconds_before.setRange(0.0, 60.0)
+        self.seconds_before.setDecimals(1)
+        self.seconds_before.setSingleStep(0.5)
+        self.seconds_before.setSuffix(" seconds")
+        self.seconds_before.setValue(seconds_before)
+        form = QFormLayout()
+        form.addRow("Start before the drop", self.seconds_before)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Analyze")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(14)
+        layout.addWidget(message)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
 
 
 class ClipsTab(QWidget):
@@ -1267,7 +1330,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.worker: RenderWorker | None = None
         self.analysis_worker: DropDetectionWorker | None = None
-        self.pending_drop_detection = False
         self.settings = QSettings("MM Toolkit", "MM Toolkit")
         self.setWindowTitle("MM Toolkit")
         self.setMinimumSize(820, 620)
@@ -1309,16 +1371,6 @@ class MainWindow(QMainWindow):
         self.mute_original_video_audio.setVisible(False)
         self.mute_original_video_audio_label = QLabel("Video sound")
         self.mute_original_video_audio_label.setVisible(False)
-        self.detect_drop = QCheckBox("Detect drop automatically")
-        self.detect_drop.setChecked(True)
-        self.pre_drop = QDoubleSpinBox()
-        self.pre_drop.setRange(0.0, 60.0)
-        self.pre_drop.setDecimals(1)
-        self.pre_drop.setSingleStep(0.5)
-        self.pre_drop.setSuffix(" seconds")
-        self.pre_drop.setValue(2.0)
-        self.detect_drop.toggled.connect(self.on_detect_drop_changed)
-        self.pre_drop.editingFinished.connect(self.start_drop_detection)
         self.promo_tracks = QTableWidget(0, 4)
         self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration", "Preview"])
         self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -1387,14 +1439,6 @@ class MainWindow(QMainWindow):
         promo_clips_layout = QVBoxLayout()
         promo_clips_layout.addWidget(self.analysis_status)
         promo_clips_layout.addWidget(self.promo_tracks, 1)
-        self.timing_options = QWidget()
-        timing_options_form = QFormLayout(self.timing_options)
-        timing_options_form.setContentsMargins(0, 4, 0, 0)
-        timing_options_form.setSpacing(8)
-        timing_options_form.addRow("Automatic start", self.detect_drop)
-        timing_options_form.addRow("Seconds before drop", self.pre_drop)
-        self.timing_options.setVisible(False)
-        promo_clips_layout.addWidget(self.timing_options)
 
         output_form = QFormLayout()
         output_form.setSpacing(12)
@@ -1500,8 +1544,6 @@ class MainWindow(QMainWindow):
         self.mute_original_video_audio.setChecked(
             self.settings.value("promo/mute_original_video_audio", True, type=bool)
         )
-        self.detect_drop.setChecked(self.settings.value("promo/detect_drop", True, type=bool))
-        self.pre_drop.setValue(self.settings.value("promo/pre_drop", 2.0, type=float))
 
     def apply_app_settings(self) -> None:
         default_output = self.settings.value("general/default_output", "")
@@ -1524,9 +1566,6 @@ class MainWindow(QMainWindow):
 
     def load_history_job(self, record: dict) -> None:
         if record.get("tool") == "promo":
-            self.detect_drop.blockSignals(True)
-            self.detect_drop.setChecked(False)
-            self.detect_drop.blockSignals(False)
             self.music.set_path(record.get("source", ""))
             self.cover.set_path(record.get("cover", ""))
             self.output.set_path(record.get("output", ""))
@@ -1534,17 +1573,12 @@ class MainWindow(QMainWindow):
             self.video_fade.setChecked(record.get("video_fade", True))
             self.audio_fade.setChecked(record.get("audio_fade", True))
             self.mute_original_video_audio.setChecked(record.get("mute_original_video_audio", True))
-            self.detect_drop.blockSignals(True)
-            self.detect_drop.setChecked(record.get("detect_drop", True))
-            self.detect_drop.blockSignals(False)
-            self.pre_drop.setValue(record.get("pre_drop", 2.0))
             stored_tracks = {item.get("path"): item for item in record.get("tracks", [])}
             for row in range(self.promo_tracks.rowCount()):
                 path = self.promo_tracks.item(row, 0).data(Qt.ItemDataRole.UserRole)
                 if path in stored_tracks:
                     self.promo_tracks.cellWidget(row, 1).setText(format_timestamp(stored_tracks[path].get("start", 0)))
                     self.promo_tracks.cellWidget(row, 2).setValue(stored_tracks[path].get("duration", 60))
-            self.pre_drop.setEnabled(self.detect_drop.isChecked())
             self.analysis_status.setText("✓ Loaded saved per-track timings.")
             self.fps.setValue(record.get("fps", 24))
             profile = record.get("profile")
@@ -1590,7 +1624,6 @@ class MainWindow(QMainWindow):
                     self.promo_tracks.cellWidget(row, 2).value(),
                 )
         tracks = find_audio_files(self.music.path)
-        self.timing_options.setVisible(bool(tracks))
         self.promo_tracks.setRowCount(0)
         for row, track in enumerate(tracks):
             self.promo_tracks.insertRow(row)
@@ -1600,9 +1633,9 @@ class MainWindow(QMainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.promo_tracks.setItem(row, 0, item)
             old_start, old_duration = previous.get(os.fspath(track), ("00:00:00", self.duration.value()))
-            start = QLineEdit(old_start)
-            start.setPlaceholderText("HH:MM:SS")
+            start = DropStartField(old_start)
             start.textChanged.connect(self.validate)
+            start.detect_requested.connect(lambda row=row: self.start_drop_detection(row))
             duration = QDoubleSpinBox()
             duration.setRange(1, 3600)
             duration.setDecimals(1)
@@ -1617,12 +1650,11 @@ class MainWindow(QMainWindow):
             self.promo_tracks.setCellWidget(row, 1, start)
             self.promo_tracks.setCellWidget(row, 2, duration)
             self.promo_tracks.setCellWidget(row, 3, preview)
-        if tracks and self.detect_drop.isChecked():
-            self.start_drop_detection()
-        elif tracks:
-            self.analysis_status.setText("Manual start times — edit each row as needed.")
-        else:
-            self.analysis_status.clear()
+        self.analysis_status.setText(
+            "Edit start times manually or use ✨ to detect a drop for one track."
+            if tracks
+            else ""
+        )
 
     def toggle_promo_preview(self, row: int, button: QPushButton) -> None:
         if (
@@ -1687,55 +1719,59 @@ class MainWindow(QMainWindow):
             options[Path(item.data(Qt.ItemDataRole.UserRole))] = (start, duration)
         return options, f"✓ {len(options)} promo clip{'s' if len(options) != 1 else ''} ready."
 
-    def on_detect_drop_changed(self, checked: bool) -> None:
-        self.pre_drop.setEnabled(checked and self.worker is None)
-        if checked:
-            self.start_drop_detection()
-        else:
-            self.pending_drop_detection = False
-            if self.analysis_worker and self.analysis_worker.isRunning():
-                self.analysis_worker.requestInterruption()
-            for row in range(self.promo_tracks.rowCount()):
-                self.promo_tracks.cellWidget(row, 1).setText("00:00:00")
-            self.analysis_status.setText("Manual start times — edit each row as needed.")
-            self.validate()
-
-    def start_drop_detection(self) -> None:
-        tracks = find_audio_files(self.music.path)
-        if not self.detect_drop.isChecked() or not tracks:
-            return
+    def start_drop_detection(self, row: int) -> None:
         if self.analysis_worker and self.analysis_worker.isRunning():
-            self.pending_drop_detection = True
-            self.analysis_worker.requestInterruption()
             return
-        self.pending_drop_detection = False
-        self.analysis_worker = DropDetectionWorker(tracks, self.pre_drop.value())
+        item = self.promo_tracks.item(row, 0)
+        if item is None:
+            return
+        source = Path(item.data(Qt.ItemDataRole.UserRole))
+        if not source.is_file():
+            QMessageBox.warning(self, "Drop detection unavailable", f"Audio file not found:\n{source}")
+            return
+        saved_lead_in = self.settings.value("promo/drop_lead_in", 2.0, type=float)
+        dialog = DropDetectionDialog(source.name, saved_lead_in, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        seconds_before = dialog.seconds_before.value()
+        self.settings.setValue("promo/drop_lead_in", seconds_before)
+        self.set_drop_buttons_enabled(False)
+        self.analysis_worker = DropDetectionWorker([source], seconds_before)
         self.analysis_worker.progress.connect(lambda _percent, status: self.analysis_status.setText(status + "…"))
         self.analysis_worker.succeeded.connect(self.on_drop_detection_success)
-        self.analysis_worker.failed.connect(lambda message: self.analysis_status.setText(f"Automatic detection failed: {message}. Edit starts manually."))
+        self.analysis_worker.failed.connect(
+            lambda message: self.analysis_status.setText(
+                f"Drop detection failed: {message}. You can still enter the start manually."
+            )
+        )
         self.analysis_worker.finished.connect(self.on_drop_detection_finished)
-        self.analysis_status.setText("Preparing drop detection…")
+        self.analysis_status.setText(f"Analyzing {source.name} for its main drop…")
         self.validate()
         self.analysis_worker.start()
 
     def on_drop_detection_success(self, starts: dict[str, float]) -> None:
-        if not self.detect_drop.isChecked():
-            return
         for row in range(self.promo_tracks.rowCount()):
             path = self.promo_tracks.item(row, 0).data(Qt.ItemDataRole.UserRole)
             if path in starts:
                 self.promo_tracks.cellWidget(row, 1).setText(format_timestamp(starts[path]))
-        self.analysis_status.setText(f"✓ Automatically set {len(starts)} start time{'s' if len(starts) != 1 else ''}.")
+                self.analysis_status.setText(
+                    f"✓ Proposed {format_timestamp(starts[path])} for {Path(path).name}. You can edit or preview it."
+                )
+                break
 
     def on_drop_detection_finished(self) -> None:
         worker = self.analysis_worker
         self.analysis_worker = None
         if worker:
             worker.deleteLater()
-        if self.pending_drop_detection:
-            self.start_drop_detection()
-        else:
-            self.validate()
+        self.set_drop_buttons_enabled(self.worker is None)
+        self.validate()
+
+    def set_drop_buttons_enabled(self, enabled: bool) -> None:
+        for row in range(self.promo_tracks.rowCount()):
+            start_field = self.promo_tracks.cellWidget(row, 1)
+            if isinstance(start_field, DropStartField):
+                start_field.detect_button.setEnabled(enabled)
 
     def validate(self) -> bool:
         tracks = find_audio_files(self.music.path)
@@ -1779,7 +1815,7 @@ class MainWindow(QMainWindow):
         if music_ok and not track_options:
             missing.append(track_message.rstrip("."))
         if analysing:
-            missing.append("wait for automatic drop detection")
+            missing.append("wait for drop analysis")
         if self.worker is not None:
             action_message = "Generating videos…"
         elif missing:
@@ -1851,9 +1887,8 @@ class MainWindow(QMainWindow):
         self.mute_original_video_audio.setEnabled(
             enabled and Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
         )
-        self.detect_drop.setEnabled(enabled)
-        self.pre_drop.setEnabled(enabled and self.detect_drop.isChecked())
         self.promo_tracks.setEnabled(enabled)
+        self.set_drop_buttons_enabled(enabled and self.analysis_worker is None)
         for control in (
             self.profile,
             self.fps,
@@ -1879,8 +1914,6 @@ class MainWindow(QMainWindow):
         self.video_fade.setChecked(True)
         self.audio_fade.setChecked(True)
         self.mute_original_video_audio.setChecked(True)
-        self.detect_drop.setChecked(True)
-        self.pre_drop.setValue(2.0)
         self.profile.setCurrentIndex(0)
         self.duration.setValue(60)
         self.fps.setValue(24)
@@ -1891,7 +1924,7 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.progress_status.clear()
         self.progress_status.hide()
-        for key in ("music", "cover", "output", "promo/bass_effect", "promo/video_fade", "promo/audio_fade", "promo/mute_original_video_audio", "promo/detect_drop", "promo/pre_drop"):
+        for key in ("music", "cover", "output", "promo/bass_effect", "promo/video_fade", "promo/audio_fade", "promo/mute_original_video_audio"):
             self.settings.remove(key)
         self.validate()
 
@@ -1905,7 +1938,6 @@ class MainWindow(QMainWindow):
         render_settings = RenderSettings(
             fps=self.fps.value(),
             duration=self.duration.value(),
-            pre_drop=self.pre_drop.value(),
             bass_effect=self.bass_effect.isChecked(),
             mute_original_video_audio=self.mute_original_video_audio.isChecked(),
             video_fade=self.video_fade.isChecked(),
@@ -1919,8 +1951,6 @@ class MainWindow(QMainWindow):
         self.settings.setValue("promo/video_fade", self.video_fade.isChecked())
         self.settings.setValue("promo/audio_fade", self.audio_fade.isChecked())
         self.settings.setValue("promo/mute_original_video_audio", self.mute_original_video_audio.isChecked())
-        self.settings.setValue("promo/detect_drop", self.detect_drop.isChecked())
-        self.settings.setValue("promo/pre_drop", self.pre_drop.value())
         self.worker = RenderWorker(
             tracks,
             Path(self.cover.path),
@@ -1962,8 +1992,6 @@ class MainWindow(QMainWindow):
             "video_fade": self.video_fade.isChecked(),
             "audio_fade": self.audio_fade.isChecked(),
             "mute_original_video_audio": self.mute_original_video_audio.isChecked(),
-            "detect_drop": self.detect_drop.isChecked(),
-            "pre_drop": self.pre_drop.value(),
             "tracks": [
                 {"path": os.fspath(path), "start": start, "duration": duration}
                 for path, (start, duration) in track_options.items()

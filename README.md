@@ -31,7 +31,7 @@ Available for macOS and Windows.
 - Enable or disable video and audio fade-in/fade-out independently.
 - Add one promo row per detected audio file and edit each track's start time and duration independently.
 - Listen to each configured promo clip directly from its Audio timestamps row before rendering.
-- Enable automatic drop detection to populate every start time using a configurable lead-in (default: 2 seconds), or disable it for manual starts.
+- Use the ✨ button beside any Start field to analyze that track and propose a drop-based start time with a configurable lead-in.
 - See an inline thumbnail of the selected image or the first frame of the selected video.
 - Clear the complete form and saved selections to start fresh.
 - Choose visual-native, vertical, square, or landscape output profiles.
