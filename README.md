@@ -9,7 +9,7 @@ A macOS-first desktop app for recurring record-label video workflows. The applic
 The macOS bundle, Windows executable, and application windows use the rounded platform-style Media Tools icon from `assets/`.
 Tab icons are bundled from [Google Material Icons](https://fonts.google.com/icons) under the Apache License 2.0; attribution details are in `assets/material-icons/NOTICE.md`.
 
-## Promo Videos tab
+## Video Generator tab
 
 - Pick one audio file or a folder and immediately verify the supported files found.
 - Supports WAV, AIFF, FLAC, MP3, M4A, AAC, and OGG input through FFmpeg.

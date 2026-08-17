@@ -987,7 +987,7 @@ class SettingsTab(QWidget):
         form.addRow("Default Folder for Export", self.default_output)
         form.addRow("", self.output_status)
         form.addRow("Notifications", self.notify_finished)
-        form.addRow("Promo filename", self.promo_naming)
+        form.addRow("Generated video filename", self.promo_naming)
         form.addRow("Clip filename", self.clip_naming)
         form.addRow("Existing files", self.conflict_policy)
 
@@ -1051,7 +1051,7 @@ class AboutTab(QWidget):
         version = QLabel(f"Version {__version__}")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         description = QLabel(
-            "Open-source desktop utilities for creating music promo videos "
+            "Open-source desktop utilities for generating music videos "
             "and cutting clips from long recordings."
         )
         description.setWordWrap(True)
@@ -1120,7 +1120,7 @@ class HistoryTab(QWidget):
         self.jobs.clear()
         for record in self.records:
             tool = {
-                "promo": "Promo Videos",
+                "promo": "Video Generator",
                 "clips": "Livestream Clips",
                 "converter": "Converter",
             }.get(record.get("tool"), "Media Tool")
@@ -1162,8 +1162,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(820, 620)
         self.resize(1100, 820)
 
-        title = page_title("Promo Videos")
-        subtitle = QLabel("Turn audio and cover artwork into promo videos at the artwork's native resolution.")
+        title = page_title("Video Generator")
+        subtitle = QLabel("Turn audio and cover artwork into videos at the artwork's native resolution.")
         subtitle.setWordWrap(True)
 
         self.music = PathRow(
@@ -1207,7 +1207,7 @@ class MainWindow(QMainWindow):
         self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.promo_tracks.setMinimumHeight(120)
+        self.promo_tracks.setMinimumHeight(50)
         self.analysis_status = QLabel("")
         self.analysis_status.setWordWrap(True)
         self.profile = QComboBox()
@@ -1243,6 +1243,8 @@ class MainWindow(QMainWindow):
         input_form.setSpacing(12)
         input_form.addRow("Audio", self.music)
         input_form.addRow("", self.music_status)
+        input_form.addRow("Automatic start", self.detect_drop)
+        input_form.addRow("Seconds before drop", self.pre_drop)
         artwork_row = QWidget()
         artwork_layout = QHBoxLayout(artwork_row)
         artwork_layout.setContentsMargins(0, 0, 0, 0)
@@ -1256,11 +1258,6 @@ class MainWindow(QMainWindow):
         effects_form.addRow("Visual effect", self.bass_effect)
 
         promo_clips_layout = QVBoxLayout()
-        detection_form = QFormLayout()
-        detection_form.setSpacing(8)
-        detection_form.addRow("Automatic start", self.detect_drop)
-        detection_form.addRow("Seconds before drop", self.pre_drop)
-        promo_clips_layout.addLayout(detection_form)
         promo_clips_layout.addWidget(self.analysis_status)
         promo_clips_layout.addWidget(self.promo_tracks, 1)
 
@@ -1277,7 +1274,7 @@ class MainWindow(QMainWindow):
 
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
-        self.generate = QPushButton("Generate Promo Videos")
+        self.generate = QPushButton("Generate Videos")
         self.generate.setMinimumHeight(44)
         self.generate.setEnabled(False)
         self.generate.clicked.connect(self.start_generation)
@@ -1304,8 +1301,10 @@ class MainWindow(QMainWindow):
         feature_columns = QHBoxLayout()
         feature_columns.setSpacing(14)
         input_column = QVBoxLayout()
-        input_column.addWidget(section_group("Input", input_form))
-        self.promo_clips_group = section_group("Promo clips", promo_clips_layout)
+        self.promo_input_group = section_group("Input", input_form)
+        self.promo_input_group.setMinimumHeight(250)
+        input_column.addWidget(self.promo_input_group)
+        self.promo_clips_group = section_group("Clips timestamps", promo_clips_layout)
         input_column.addWidget(self.promo_clips_group, 1)
         input_column.addStretch()
         settings_column = QVBoxLayout()
@@ -1334,7 +1333,7 @@ class MainWindow(QMainWindow):
         self.about = AboutTab()
         self.tabs = QTabWidget()
         icon_color = self.palette().color(QPalette.ColorRole.WindowText).name()
-        self.tabs.addTab(container, material_icon("music_video", icon_color), "Promo Videos")
+        self.tabs.addTab(container, material_icon("music_video", icon_color), "Video Generator")
         self.tabs.addTab(self.clips, material_icon("content_cut", icon_color), "Livestream Clips")
         self.tabs.addTab(self.converter, material_icon("swap_horiz", icon_color), "Converter")
         self.tabs.addTab(self.history, material_icon("history", icon_color), "History")
@@ -1569,11 +1568,11 @@ class MainWindow(QMainWindow):
         if analysing:
             missing.append("wait for automatic drop detection")
         if self.worker is not None:
-            action_message = "Generating promo videos…"
+            action_message = "Generating videos…"
         elif missing:
             action_message = "To enable Generate: " + "; ".join(missing) + "."
         else:
-            action_message = "✓ Ready to generate promo videos."
+            action_message = "✓ Ready to generate videos."
         self.generate_requirements.setText(action_message)
         self.generate.setToolTip(action_message)
         if track_options:
