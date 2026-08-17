@@ -1512,13 +1512,14 @@ class MainWindow(QMainWindow):
         self.mute_original_video_audio_label = QLabel("Video sound")
         self.mute_original_video_audio_label.setVisible(False)
         self.promo_tracks = QTableWidget(0, 4)
-        self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration", "Preview"])
+        self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration", ""])
         self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         self.promo_tracks.setColumnWidth(0, 120)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.promo_tracks.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.promo_tracks.horizontalHeader().setMinimumSectionSize(72)
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.promo_tracks.setColumnWidth(3, 42)
+        self.promo_tracks.horizontalHeader().setMinimumSectionSize(36)
         self.promo_tracks.verticalHeader().setDefaultSectionSize(44)
         self.promo_tracks.setMinimumHeight(50)
         self.promo_preview_player = QMediaPlayer(self)
@@ -1529,7 +1530,7 @@ class MainWindow(QMainWindow):
         self.promo_preview_player.mediaStatusChanged.connect(self.on_promo_preview_media_status)
         self.promo_preview_end_ms = 0
         self.promo_preview_start_ms: int | None = None
-        self.promo_preview_button: QPushButton | None = None
+        self.promo_preview_button: QToolButton | None = None
         self.analysis_status = QLabel("")
         self.analysis_status.setWordWrap(True)
         self.profile = QComboBox()
@@ -1790,10 +1791,11 @@ class MainWindow(QMainWindow):
             duration.setSuffix(" s")
             duration.setValue(old_duration)
             duration.valueChanged.connect(self.validate)
-            preview = QPushButton("▶ Listen")
-            preview.setMinimumWidth(96)
-            preview.setFixedHeight(36)
-            preview.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
+            preview = QToolButton()
+            preview.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+            preview.setAutoRaise(True)
+            preview.setFixedSize(36, 36)
+            preview.setAccessibleName(f"Play preview for {track.name}")
             preview.clicked.connect(
                 lambda _checked=False, row=row, button=preview: self.toggle_promo_preview(row, button)
             )
@@ -1821,14 +1823,14 @@ class MainWindow(QMainWindow):
         preview = self.promo_tracks.cellWidget(row, 3)
         if not isinstance(start, DropStartField) or not isinstance(duration, QDoubleSpinBox):
             return
-        if not isinstance(preview, QPushButton):
+        if not isinstance(preview, QToolButton):
             return
-        preview.setText("▶ Listen")
+        preview.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         preview.setToolTip(
             f"Listen from {start.text() or 'the start time'} for {duration.value():g} seconds"
         )
 
-    def toggle_promo_preview(self, row: int, button: QPushButton) -> None:
+    def toggle_promo_preview(self, row: int, button: QToolButton) -> None:
         if (
             self.promo_preview_button is button
             and self.promo_preview_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
@@ -1860,7 +1862,7 @@ class MainWindow(QMainWindow):
             QMediaPlayer.MediaStatus.BufferedMedia,
         ):
             self.start_promo_preview_playback()
-        button.setText("■ Stop")
+        button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
         self.analysis_status.setText(
             f"Listening to {source.name} from {format_timestamp(start_seconds)} for {duration_seconds:g} seconds."
         )
@@ -1886,7 +1888,9 @@ class MainWindow(QMainWindow):
 
     def on_promo_preview_state(self, state) -> None:  # noqa: ANN001
         if state == QMediaPlayer.PlaybackState.StoppedState and self.promo_preview_button:
-            self.promo_preview_button.setText("▶ Listen")
+            self.promo_preview_button.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+            )
             self.promo_preview_button = None
             self.promo_preview_start_ms = None
             self.promo_preview_end_ms = 0
@@ -1898,7 +1902,7 @@ class MainWindow(QMainWindow):
         self.promo_preview_end_ms = 0
         self.promo_preview_player.stop()
         if button:
-            button.setText("▶ Listen")
+            button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
 
     def promo_track_options(self) -> tuple[dict[Path, tuple[float, float]], str]:
         options: dict[Path, tuple[float, float]] = {}
