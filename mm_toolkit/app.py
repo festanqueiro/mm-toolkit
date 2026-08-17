@@ -481,6 +481,10 @@ class ClipsTab(QWidget):
         self.player.positionChanged.connect(self.on_player_position)
         self.player.durationChanged.connect(self.on_player_duration)
         self.player.playbackStateChanged.connect(self.on_playback_state)
+        self.player.mediaStatusChanged.connect(self.on_cutter_media_status)
+        self.clip_preview_button: QPushButton | None = None
+        self.clip_preview_start_ms: int | None = None
+        self.clip_preview_end_ms = 0
 
         input_form = QFormLayout()
         input_form.setSpacing(10)
@@ -492,8 +496,8 @@ class ClipsTab(QWidget):
         output_form.addRow("Export folder", self.output)
         output_form.addRow("", self.output_status)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Title", "Start", "End (optional)", "Duration", ""])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["Title", "Start", "End", "Duration", "Preview", ""])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
@@ -522,9 +526,9 @@ class ClipsTab(QWidget):
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.horizontalHeader().setMinimumSectionSize(60)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        for column in (1, 2, 3, 4):
+        for column in (1, 2, 3, 4, 5):
             self.table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
-        for column, width in enumerate((120, 94, 94, 78, 76)):
+        for column, width in enumerate((100, 82, 82, 70, 64, 60)):
             self.table.setColumnWidth(column, width)
         self.table.setMinimumHeight(150)
         self.add_button = QPushButton("+ Add clip")
@@ -613,13 +617,26 @@ class ClipsTab(QWidget):
             edit.setStyleSheet(TIMESTAMP_FIELD_STYLE)
             edit.setPlaceholderText(placeholder)
             edit.textChanged.connect(self.validate)
+            if column in (1, 2, 3):
+                edit.textChanged.connect(lambda _text, row=row: self.on_clip_timing_changed(row))
             edit.focused.connect(lambda row=row, column=column: self.table.setCurrentCell(row, column))
             self.table.setCellWidget(row, column, edit)
-        remove = QPushButton("Remove")
+        preview = QPushButton("▶")
+        preview.setToolTip("Play this clip")
+        preview.setAccessibleName(f"Play clip {row + 1}")
+        preview.setFixedHeight(38)
+        preview.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
+        preview.clicked.connect(
+            lambda _checked=False, button=preview: self.toggle_clip_preview_button(button)
+        )
+        self.table.setCellWidget(row, 4, preview)
+        remove = QPushButton("×")
+        remove.setToolTip("Remove this clip")
+        remove.setAccessibleName(f"Remove clip {row + 1}")
         remove.setFixedHeight(38)
         remove.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
         remove.clicked.connect(lambda _checked=False, button=remove: self.remove_row(button))
-        self.table.setCellWidget(row, 4, remove)
+        self.table.setCellWidget(row, 5, remove)
         self.table.setCurrentCell(row, 0)
         self.validate()
 
@@ -646,8 +663,9 @@ class ClipsTab(QWidget):
                     widget.setStyleSheet(base_style + active_style)
 
     def remove_row(self, button: QPushButton) -> None:
+        self.stop_clip_preview()
         for row in range(self.table.rowCount()):
-            if self.table.cellWidget(row, 4) is button:
+            if self.table.cellWidget(row, 5) is button:
                 self.table.removeRow(row)
                 break
         if self.table.rowCount() == 0:
@@ -657,30 +675,89 @@ class ClipsTab(QWidget):
     def parsed_clips(self) -> tuple[list[ClipRequest], str]:
         clips: list[ClipRequest] = []
         for row in range(self.table.rowCount()):
-            title_text = self.table.cellWidget(row, 0).text().strip()
-            start_text = self.table.cellWidget(row, 1).text().strip()
-            end_text = self.table.cellWidget(row, 2).text().strip()
-            duration_text = self.table.cellWidget(row, 3).text().strip()
-            if not start_text:
-                return [], f"Clip {row + 1}: enter a start timestamp."
             try:
-                start = parse_timestamp(start_text)
-                if end_text:
-                    duration = parse_timestamp(end_text) - start
-                    if duration <= 0:
-                        raise ValueError("End must be later than start.")
-                else:
-                    duration = parse_timestamp(duration_text or "60")
-                    if duration <= 0:
-                        raise ValueError("Duration must be greater than zero.")
+                clips.append(self.clip_request(row))
             except ValueError as exc:
                 return [], f"Clip {row + 1}: {exc}"
-            clips.append(ClipRequest(start, duration, title_text))
         return clips, f"✓ {len(clips)} clip{'s' if len(clips) != 1 else ''} ready."
+
+    def clip_request(self, row: int) -> ClipRequest:
+        title = self.table.cellWidget(row, 0).text().strip()
+        start_text = self.table.cellWidget(row, 1).text().strip()
+        end_text = self.table.cellWidget(row, 2).text().strip()
+        duration_text = self.table.cellWidget(row, 3).text().strip()
+        if not start_text:
+            raise ValueError("enter a start timestamp.")
+        start = parse_timestamp(start_text)
+        if end_text:
+            duration = parse_timestamp(end_text) - start
+            if duration <= 0:
+                raise ValueError("End must be later than start.")
+        else:
+            duration = parse_timestamp(duration_text or "60")
+            if duration <= 0:
+                raise ValueError("Duration must be greater than zero.")
+        return ClipRequest(start, duration, title)
+
+    def on_clip_timing_changed(self, row: int) -> None:
+        if self.table.cellWidget(row, 4) is self.clip_preview_button:
+            self.stop_clip_preview()
+
+    def toggle_clip_preview(self, row: int, button: QPushButton) -> None:
+        if self.clip_preview_button is button and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.player.pause()
+            return
+        if not validate_media_source(self.source.path)[0]:
+            return
+        try:
+            clip = self.clip_request(row)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Preview unavailable", f"Clip {row + 1}: {exc}")
+            return
+        self.stop_clip_preview()
+        self.table.setCurrentCell(row, 4)
+        self.clip_preview_button = button
+        self.clip_preview_start_ms = round(clip.start * 1000)
+        self.clip_preview_end_ms = round((clip.start + clip.duration) * 1000)
+        button.setText("■")
+        button.setToolTip("Stop this clip")
+        if self.player.mediaStatus() in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self.start_clip_preview()
+
+    def toggle_clip_preview_button(self, button: QPushButton) -> None:
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, 4) is button:
+                self.toggle_clip_preview(row, button)
+                return
+
+    def on_cutter_media_status(self, status) -> None:  # noqa: ANN001
+        if status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
+            self.start_clip_preview()
+
+    def start_clip_preview(self) -> None:
+        if self.clip_preview_start_ms is None or self.clip_preview_button is None:
+            return
+        start_ms = self.clip_preview_start_ms
+        self.clip_preview_start_ms = None
+        self.player.setPosition(start_ms)
+        self.player.play()
+
+    def stop_clip_preview(self) -> None:
+        button = self.clip_preview_button
+        self.clip_preview_button = None
+        self.clip_preview_start_ms = None
+        self.clip_preview_end_ms = 0
+        if button:
+            button.setText("▶")
+            button.setToolTip("Play this clip")
 
     def load_media_preview(self, path: str) -> None:
         valid, _ = validate_media_source(path)
         kind = media_kind(path) if valid else None
+        self.stop_clip_preview()
         self.player.stop()
         self.player.setSource(QUrl.fromLocalFile(path) if valid else QUrl())
         self.video_preview.setVisible(kind == "video")
@@ -690,10 +767,13 @@ class ClipsTab(QWidget):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         else:
+            self.stop_clip_preview()
             self.player.play()
 
     def on_playback_state(self, state) -> None:  # noqa: ANN001
         self.play_button.setText("Pause" if state == QMediaPlayer.PlaybackState.PlayingState else "▶ Play")
+        if state != QMediaPlayer.PlaybackState.PlayingState:
+            self.stop_clip_preview()
 
     def on_player_position(self, position: int) -> None:
         if not self.timeline.isSliderDown():
@@ -701,6 +781,8 @@ class ClipsTab(QWidget):
         self.time_label.setText(
             f"{format_timestamp(position / 1000)} / {format_timestamp(self.player.duration() / 1000)}"
         )
+        if self.clip_preview_end_ms and position >= self.clip_preview_end_ms:
+            self.player.pause()
 
     def on_player_duration(self, duration: int) -> None:
         self.timeline.setRange(0, max(0, duration))
