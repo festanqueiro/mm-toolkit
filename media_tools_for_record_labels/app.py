@@ -197,12 +197,13 @@ class ConverterWorker(QThread):
     failed = Signal(str, str)
     cancelled = Signal()
 
-    def __init__(self, sources: list[Path], output: Path, output_format: str, conflict: str):
+    def __init__(self, sources: list[Path], output: Path, output_format: str, conflict: str, audio_bitrate: str):
         super().__init__()
         self.sources = sources
         self.output = output
         self.output_format = output_format
         self.conflict = conflict
+        self.audio_bitrate = audio_bitrate
 
     def run(self) -> None:
         try:
@@ -213,6 +214,7 @@ class ConverterWorker(QThread):
                 lambda percent, status: self.progress.emit(percent, status),
                 self.conflict,
                 self.isInterruptionRequested,
+                self.audio_bitrate,
             )
             self.succeeded.emit([os.fspath(path) for path in results])
         except CancelledError:
@@ -666,6 +668,12 @@ class ConverterTab(QWidget):
         self.media_type = QLabel("Not detected")
         self.output_format = QComboBox()
         self.output_format.currentIndexChanged.connect(self.validate)
+        self.mp3_bitrate = QComboBox()
+        for bitrate in ("128k", "192k", "256k", "320k"):
+            self.mp3_bitrate.addItem(f"{bitrate[:-1]} kbps", bitrate)
+        self.mp3_bitrate.setCurrentIndex(self.mp3_bitrate.findData("320k"))
+        self.mp3_bitrate.currentIndexChanged.connect(self.validate)
+        self.mp3_bitrate_label = QLabel("MP3 bitrate")
         self.output = PathRow("Choose converter export folder", "directory")
         self.output.changed.connect(self.validate)
         self.output_status = QLabel("Choose an export folder.")
@@ -683,6 +691,7 @@ class ConverterTab(QWidget):
         output_form.setSpacing(12)
         output_form.addRow("Detected media", self.media_type)
         output_form.addRow("Convert to", self.output_format)
+        output_form.addRow(self.mp3_bitrate_label, self.mp3_bitrate)
         output_form.addRow("Export folder", self.output)
         output_form.addRow("", self.output_status)
 
@@ -794,6 +803,9 @@ class ConverterTab(QWidget):
             input_message = f"✓ {len(sources)} {kind} file{'s' if len(sources) != 1 else ''} ready."
         self.input_status.setText(input_message)
         self.media_type.setText(kind.title() if kind else "Not detected")
+        mp3_selected = kind == "audio" and self.output_format.currentData() == "mp3"
+        self.mp3_bitrate_label.setVisible(mp3_selected)
+        self.mp3_bitrate.setVisible(mp3_selected)
         output_path = Path(self.output.path).expanduser() if self.output.path else None
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
         self.output_status.setText("✓ Export folder is writable." if output_ok else "Choose a writable export folder.")
@@ -807,7 +819,8 @@ class ConverterTab(QWidget):
         elif missing:
             message = "To enable Convert: " + "; ".join(missing) + "."
         else:
-            message = f"✓ Ready to convert {len(sources)} file{'s' if len(sources) != 1 else ''} to {self.output_format.currentText()}."
+            bitrate = f" at {self.mp3_bitrate.currentText()}" if mp3_selected else ""
+            message = f"✓ Ready to convert {len(sources)} file{'s' if len(sources) != 1 else ''} to {self.output_format.currentText()}{bitrate}."
         self.requirements.setText(message)
         ready = kind is not None and output_ok and self.output_format.count() > 0 and self.worker is None
         self.convert_button.setEnabled(ready)
@@ -819,6 +832,7 @@ class ConverterTab(QWidget):
         self.choose_button.setEnabled(enabled)
         self.files.setEnabled(enabled)
         self.output_format.setEnabled(enabled)
+        self.mp3_bitrate.setEnabled(enabled)
         self.output.set_enabled(enabled)
         self.clear_button.setEnabled(enabled)
         if not enabled:
@@ -847,6 +861,7 @@ class ConverterTab(QWidget):
             Path(self.output.path),
             self.output_format.currentData(),
             self.settings.value("general/conflict_policy", "rename"),
+            self.mp3_bitrate.currentData(),
         )
         self.worker.progress.connect(self.on_progress)
         self.worker.succeeded.connect(self.on_success)
@@ -875,6 +890,7 @@ class ConverterTab(QWidget):
             "sources": [os.fspath(path) for path in self.source_paths()],
             "output": self.output.path,
             "format": self.output_format.currentData(),
+            "bitrate": self.mp3_bitrate.currentData(),
             "outputs": outputs,
         })
         if self.settings.value("general/notify_finished", True, type=bool):
@@ -1328,6 +1344,9 @@ class MainWindow(QMainWindow):
             format_index = self.converter.output_format.findData(record.get("format", ""))
             if format_index >= 0:
                 self.converter.output_format.setCurrentIndex(format_index)
+            bitrate_index = self.converter.mp3_bitrate.findData(record.get("bitrate", "320k"))
+            if bitrate_index >= 0:
+                self.converter.mp3_bitrate.setCurrentIndex(bitrate_index)
             self.tabs.setCurrentIndex(2)
 
     def validate(self) -> bool:

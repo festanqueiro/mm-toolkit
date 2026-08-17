@@ -40,6 +40,7 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 ## Converter tab
 
 - Select one or many audio files and convert them to MP3, WAV, AIFF, FLAC, M4A, AAC, or OGG.
+- Choose 128, 192, 256, or 320 kbps when MP3 is the selected output format.
 - Select one or many video files and convert them to MP4, MOV, MKV, AVI, or WebM.
 - Automatically detect audio versus video and prevent incompatible mixed batches.
 - Preview selected inputs, choose a writable export folder, follow progress, and cancel safely.

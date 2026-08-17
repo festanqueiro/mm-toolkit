@@ -112,3 +112,10 @@ def test_convert_audio_wav_to_flac(tmp_path: Path) -> None:
     results = convert_media([source], output_dir, "flac")
     assert results == [output_dir / "Source Audio.flac"]
     assert results[0].is_file()
+
+
+def test_converter_rejects_unknown_audio_bitrate(tmp_path: Path) -> None:
+    source = tmp_path / "source.wav"
+    source.touch()
+    with pytest.raises(ValueError, match="Audio bitrate"):
+        convert_media([source], tmp_path, "mp3", audio_bitrate="999k")

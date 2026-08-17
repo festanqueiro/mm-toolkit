@@ -503,6 +503,7 @@ def convert_media(
     callback: ProgressCallback | None = None,
     conflict_policy: str = "rename",
     should_cancel: CancelCheck = lambda: False,
+    audio_bitrate: str = "320k",
 ) -> list[Path]:
     """Batch-convert audio or video files with FFmpeg."""
     files = list(sources)
@@ -516,11 +517,13 @@ def convert_media(
     output_format = output_format.lower().lstrip(".")
     if output_format not in allowed:
         raise ValueError(f"{output_format.upper()} is not a supported {kind} output format.")
+    if audio_bitrate not in {"128k", "192k", "256k", "320k"}:
+        raise ValueError("Audio bitrate must be 128k, 192k, 256k, or 320k.")
     ffmpeg = require_ffmpeg()
     output_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
     audio_args = {
-        "mp3": ["-vn", "-c:a", "libmp3lame", "-q:a", "2"],
+        "mp3": ["-vn", "-c:a", "libmp3lame", "-b:a", audio_bitrate],
         "wav": ["-vn", "-c:a", "pcm_s24le"],
         "aiff": ["-vn", "-c:a", "pcm_s24be"],
         "flac": ["-vn", "-c:a", "flac"],
