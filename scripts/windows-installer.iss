@@ -1,7 +1,7 @@
-#define AppName "Media Tools for Record Labels"
+#define AppName "MM Toolkit"
 #define AppVersion "1.0.0"
-#define AppPublisher "Media Tools for Record Labels"
-#define AppExeName "Media Tools for Record Labels.exe"
+#define AppPublisher "MM Toolkit"
+#define AppExeName "MM Toolkit.exe"
 
 [Setup]
 AppId={{58F27B40-E543-4B5B-923D-08D498C3615A}
@@ -11,8 +11,8 @@ AppPublisher={#AppPublisher}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\release
-OutputBaseFilename=media-tools-for-record-labels-windows-setup
-SetupIconFile=..\assets\media-tools-for-record-labels.ico
+OutputBaseFilename=mm-toolkit-windows-setup
+SetupIconFile=..\assets\mm-toolkit.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -21,7 +21,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#AppExeName}
 
 [Files]
-Source: "..\dist\Media Tools for Record Labels\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\MM Toolkit\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"

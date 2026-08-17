@@ -2,6 +2,6 @@
 set -eu
 
 python3 -m pip install -r requirements.txt
-python3 -m PyInstaller --noconfirm --clean MediaToolsForRecordLabels.spec
+python3 -m PyInstaller --noconfirm --clean MMToolkit.spec
 
-echo "Built: dist/Media Tools for Record Labels.app"
+echo "Built: dist/MM Toolkit.app"

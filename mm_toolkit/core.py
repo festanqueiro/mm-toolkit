@@ -120,9 +120,9 @@ def format_timestamp(seconds: float) -> str:
 def validate_video(path: str | Path) -> tuple[bool, str]:
     source = Path(path).expanduser()
     if not source.is_file():
-        return False, "Choose a source video."
+        return False, "The source video could not be found."
     if source.suffix.lower() not in VIDEO_EXTENSIONS:
-        return False, "Choose an MP4, MOV, M4V, MKV, AVI, or WebM video."
+        return False, "The selected file is not a supported video."
     return True, "Source video ready."
 
 
@@ -141,9 +141,9 @@ def find_audio_files(folder: str | Path) -> list[Path]:
 def validate_cover(path: str | Path) -> tuple[bool, str]:
     cover = Path(path).expanduser()
     if not cover.is_file():
-        return False, "Choose an artwork image."
+        return False, "The image could not be found."
     if cover.suffix.lower() not in IMAGE_EXTENSIONS:
-        return False, "Artwork must be PNG, JPG, WebP, or TIFF."
+        return False, "The selected file is not a supported image."
     try:
         with Image.open(cover) as image:
             image.verify()
@@ -159,12 +159,12 @@ def validate_visual(path: str | Path) -> tuple[bool, str]:
         return valid, "Image ready." if valid else message.replace("Artwork", "Image")
     if visual.suffix.lower() in VIDEO_EXTENSIONS:
         if not visual.is_file():
-            return False, "Choose an image or video."
+            return False, "The video could not be found."
         capture = cv2.VideoCapture(os.fspath(visual))
         readable, _frame = capture.read()
         capture.release()
         return (True, "Video ready.") if readable else (False, "The selected video could not be read.")
-    return False, "Choose a PNG, JPG, WebP, TIFF, MP4, MOV, M4V, MKV, AVI, or WebM file."
+    return False, "The selected file cannot be used as an image or video."
 
 
 def media_kind(path: str | Path) -> str | None:

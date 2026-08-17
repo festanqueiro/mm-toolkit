@@ -1,14 +1,13 @@
-name: Develop CI
+name: CI
 
 on:
   pull_request:
-    branches: [develop]
+    branches: [develop, main]
   push:
     branches: [develop]
-  workflow_dispatch:
 
 concurrency:
-  group: develop-ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -23,8 +22,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  test-and-build:
-    name: Test and build (${{ matrix.os }})
+  test:
+    name: Basic tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  build:
+    name: Build (${{ matrix.os }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: [secret-scan, test]
     strategy:
       fail-fast: false
       matrix:
@@ -45,21 +67,18 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Run tests
-        run: python -m pytest -q
-
       - name: Build application
-        run: python -m PyInstaller --noconfirm --clean MediaToolsForRecordLabels.spec
+        run: python -m PyInstaller --noconfirm --clean MMToolkit.spec
 
       - name: Verify macOS bundle
         if: runner.os == 'macOS'
-        run: test -d "dist/Media Tools for Record Labels.app"
+        run: test -d "dist/MM Toolkit.app"
 
       - name: Verify Windows executable
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist/Media Tools for Record Labels/Media Tools for Record Labels.exe")) {
+          if (-not (Test-Path "dist/MM Toolkit/MM Toolkit.exe")) {
             throw "Windows executable was not built"
           }
 
@@ -68,7 +87,7 @@ jobs:
         with:
           name: develop-${{ runner.os }}-${{ runner.arch }}
           path: |
-            dist/Media Tools for Record Labels.app
-            dist/Media Tools for Record Labels
+            dist/MM Toolkit.app
+            dist/MM Toolkit
           if-no-files-found: error
           retention-days: 7

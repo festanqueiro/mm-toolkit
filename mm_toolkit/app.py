@@ -1,4 +1,4 @@
-"""Desktop interface for Media Tools for Record Labels."""
+"""Desktop interface for MM Toolkit."""
 
 from __future__ import annotations
 
@@ -348,8 +348,8 @@ class ClipsTab(QWidget):
             "Videos (*.mp4 *.mov *.m4v *.mkv *.avi *.webm)",
         )
         self.output = PathRow("Choose clip export folder", "directory")
-        self.source_status = QLabel("Choose a source video.")
-        self.output_status = QLabel("Choose an export folder.")
+        self.source_status = QLabel("")
+        self.output_status = QLabel("")
         self.preview_source = QPushButton("▶ Play Source Video")
         self.preview_source.setEnabled(False)
         self.preview_source.clicked.connect(lambda: open_preview(self, self.source.path))
@@ -568,10 +568,14 @@ class ClipsTab(QWidget):
 
     def validate(self) -> bool:
         source_ok, source_message = validate_video(self.source.path)
-        self.source_status.setText(("✓ " if source_ok else "") + source_message)
+        source_status = (("✓ " if source_ok else "") + source_message) if self.source.path else ""
+        self.source_status.setText(source_status)
+        self.source_status.setVisible(bool(source_status))
         output_path = Path(self.output.path).expanduser() if self.output.path else None
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
-        self.output_status.setText("✓ Export folder is writable." if output_ok else "Choose a writable export folder.")
+        output_status = "✓ Export folder is writable." if output_ok else "Export folder is not writable." if self.output.path else ""
+        self.output_status.setText(output_status)
+        self.output_status.setVisible(bool(output_status))
         clips, clip_message = self.parsed_clips()
         self.clip_status.setText(clip_message)
         ready = source_ok and output_ok and bool(clips) and self.worker is None
@@ -705,7 +709,7 @@ class ConverterTab(QWidget):
         self.remove_button.clicked.connect(self.remove_selected)
         self.preview_button = QPushButton("▶ Preview Selected")
         self.preview_button.clicked.connect(self.preview_selected)
-        self.input_status = QLabel("Choose one or more audio files or one or more video files.")
+        self.input_status = QLabel("")
         self.input_status.setWordWrap(True)
         self.media_type = QLabel("Not detected")
         self.output_format = QComboBox()
@@ -718,7 +722,7 @@ class ConverterTab(QWidget):
         self.mp3_bitrate_label = QLabel("MP3 bitrate")
         self.output = PathRow("Choose converter export folder", "directory")
         self.output.changed.connect(self.validate)
-        self.output_status = QLabel("Choose an export folder.")
+        self.output_status = QLabel("")
         self.output_status.setWordWrap(True)
 
         input_layout = QVBoxLayout()
@@ -836,21 +840,24 @@ class ConverterTab(QWidget):
             self.update_formats(kind)
             self.output_format.setProperty("media_kind", kind)
         if not sources:
-            input_message = "Choose one or more audio files or one or more video files."
+            input_message = ""
         elif mixed:
-            input_message = "Choose audio files or video files in one batch—not both."
+            input_message = "Audio and video files cannot be mixed in one batch."
         elif kind is None:
-            input_message = "One or more selected files are missing or unsupported."
+            input_message = "One or more selected files cannot be used."
         else:
             input_message = f"✓ {len(sources)} {kind} file{'s' if len(sources) != 1 else ''} ready."
         self.input_status.setText(input_message)
+        self.input_status.setVisible(bool(input_message))
         self.media_type.setText(kind.title() if kind else "Not detected")
         mp3_selected = kind == "audio" and self.output_format.currentData() == "mp3"
         self.mp3_bitrate_label.setVisible(mp3_selected)
         self.mp3_bitrate.setVisible(mp3_selected)
         output_path = Path(self.output.path).expanduser() if self.output.path else None
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
-        self.output_status.setText("✓ Export folder is writable." if output_ok else "Choose a writable export folder.")
+        output_status = "✓ Export folder is writable." if output_ok else "Export folder is not writable." if self.output.path else ""
+        self.output_status.setText(output_status)
+        self.output_status.setVisible(bool(output_status))
         missing = []
         if kind is None:
             missing.append("choose a valid audio-only or video-only batch")
@@ -1035,7 +1042,7 @@ class AboutTab(QWidget):
         super().__init__()
         page_heading = page_title("About")
         logo = QLabel()
-        pixmap = QPixmap(os.fspath(bundled_asset("Media tools app - full logo no bg.png")))
+        pixmap = QPixmap(os.fspath(bundled_asset("mm-toolkit-logo.png")))
         logo.setPixmap(
             pixmap.scaled(
                 300,
@@ -1046,20 +1053,19 @@ class AboutTab(QWidget):
         )
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        title = QLabel("Media Tools for Record Labels")
+        title = QLabel("MM Toolkit")
         title.setFont(QFont("", 22, QFont.Weight.DemiBold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version = QLabel(f"Version {__version__}")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         description = QLabel(
-            "Open-source desktop utilities for generating music videos "
-            "and cutting clips from long recordings."
+            "Audio & Video tools for all"
         )
         description.setWordWrap(True)
         description.setAlignment(Qt.AlignmentFlag.AlignCenter)
         repository = QLabel(
-            '<a href="https://github.com/festanqueiro/record-label-mediatools">'
-            "github.com/festanqueiro/record-label-mediatools</a>"
+            '<a href="https://github.com/festanqueiro/mm-toolkit">'
+            "github.com/festanqueiro/mm-toolkit</a>"
         )
         repository.setOpenExternalLinks(True)
         repository.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1158,8 +1164,8 @@ class MainWindow(QMainWindow):
         self.worker: RenderWorker | None = None
         self.analysis_worker: DropDetectionWorker | None = None
         self.pending_drop_detection = False
-        self.settings = QSettings("Media Tools for Record Labels", "Media Tools for Record Labels")
-        self.setWindowTitle("Media Tools for Record Labels")
+        self.settings = QSettings("MM Toolkit", "MM Toolkit")
+        self.setWindowTitle("MM Toolkit")
         self.setMinimumSize(820, 620)
         self.resize(1100, 820)
 
@@ -1178,9 +1184,9 @@ class MainWindow(QMainWindow):
             "Visuals (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.mp4 *.mov *.m4v *.mkv *.avi *.webm)",
         )
         self.output = PathRow("Choose export folder", "directory")
-        self.music_status = QLabel("Choose an audio file or folder.")
-        self.cover_status = QLabel("Choose an image or video.")
-        self.output_status = QLabel("Choose an export folder.")
+        self.music_status = QLabel("")
+        self.cover_status = QLabel("")
+        self.output_status = QLabel("")
         self.music_status.setWordWrap(True)
         self.cover_status.setWordWrap(True)
         self.output_status.setWordWrap(True)
@@ -1254,8 +1260,6 @@ class MainWindow(QMainWindow):
         input_form.setSpacing(12)
         input_form.addRow("Audio", self.music)
         input_form.addRow("", self.music_status)
-        input_form.addRow("Automatic start", self.detect_drop)
-        input_form.addRow("Seconds before drop", self.pre_drop)
         artwork_row = QWidget()
         artwork_layout = QHBoxLayout(artwork_row)
         artwork_layout.setContentsMargins(0, 0, 0, 0)
@@ -1263,17 +1267,25 @@ class MainWindow(QMainWindow):
         artwork_layout.addWidget(self.artwork_preview)
         input_form.addRow("Image or video", artwork_row)
         input_form.addRow("", self.cover_status)
-        input_form.addRow(self.mute_original_video_audio_label, self.mute_original_video_audio)
 
         effects_form = QFormLayout()
         effects_form.setSpacing(12)
         effects_form.addRow("Visual effect", self.bass_effect)
+        effects_form.addRow(self.mute_original_video_audio_label, self.mute_original_video_audio)
         effects_form.addRow("Video", self.video_fade)
         effects_form.addRow("Audio", self.audio_fade)
 
         promo_clips_layout = QVBoxLayout()
         promo_clips_layout.addWidget(self.analysis_status)
         promo_clips_layout.addWidget(self.promo_tracks, 1)
+        self.timing_options = QWidget()
+        timing_options_form = QFormLayout(self.timing_options)
+        timing_options_form.setContentsMargins(0, 4, 0, 0)
+        timing_options_form.setSpacing(8)
+        timing_options_form.addRow("Automatic start", self.detect_drop)
+        timing_options_form.addRow("Seconds before drop", self.pre_drop)
+        self.timing_options.setVisible(False)
+        promo_clips_layout.addWidget(self.timing_options)
 
         output_form = QFormLayout()
         output_form.setSpacing(12)
@@ -1319,7 +1331,7 @@ class MainWindow(QMainWindow):
         self.promo_input_group = section_group("Input", input_form)
         self.promo_input_group.setMinimumHeight(250)
         input_column.addWidget(self.promo_input_group)
-        self.promo_clips_group = section_group("Clips timestamps", promo_clips_layout)
+        self.promo_clips_group = section_group("Audio timestamps", promo_clips_layout)
         input_column.addWidget(self.promo_clips_group, 1)
         input_column.addStretch()
         settings_column = QVBoxLayout()
@@ -1468,6 +1480,7 @@ class MainWindow(QMainWindow):
                     self.promo_tracks.cellWidget(row, 2).value(),
                 )
         tracks = find_audio_files(self.music.path)
+        self.timing_options.setVisible(bool(tracks))
         self.promo_tracks.setRowCount(0)
         for row, track in enumerate(tracks):
             self.promo_tracks.insertRow(row)
@@ -1560,17 +1573,21 @@ class MainWindow(QMainWindow):
     def validate(self) -> bool:
         tracks = find_audio_files(self.music.path)
         music_ok = bool(tracks)
-        self.music_status.setText(
-            f"✓ Found {len(tracks)} supported audio file{'s' if len(tracks) != 1 else ''}."
+        music_status = (
+            f"✓ Found {len(tracks)} audio file{'s' if len(tracks) != 1 else ''}."
             if music_ok
-            else "Choose a supported audio file or a folder containing audio (WAV, AIFF, FLAC, MP3, M4A, AAC, OGG)."
+            else "No audio files were found." if self.music.path else ""
         )
+        self.music_status.setText(music_status)
+        self.music_status.setVisible(bool(music_status))
         cover_ok, cover_message = validate_visual(self.cover.path)
         video_visual = Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
         self.mute_original_video_audio.setVisible(video_visual)
         self.mute_original_video_audio_label.setVisible(video_visual)
         self.mute_original_video_audio.setEnabled(video_visual and cover_ok and self.worker is None)
-        self.cover_status.setText(("✓ " if cover_ok else "") + cover_message)
+        cover_status = (("✓ " if cover_ok else "") + cover_message) if self.cover.path else ""
+        self.cover_status.setText(cover_status)
+        self.cover_status.setVisible(bool(cover_status))
         self.update_artwork_preview(cover_ok)
         editable = self.worker is None
         self.promo_clips_group.setEnabled(music_ok and editable)
@@ -1579,13 +1596,15 @@ class MainWindow(QMainWindow):
         self.output_group.setEnabled(downstream_ready)
         output_path = Path(self.output.path).expanduser() if self.output.path else None
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
-        self.output_status.setText("✓ Export folder is writable." if output_ok else "Choose a writable export folder.")
+        output_status = "✓ Export folder is writable." if output_ok else "Export folder is not writable." if self.output.path else ""
+        self.output_status.setText(output_status)
+        self.output_status.setVisible(bool(output_status))
         track_options, track_message = self.promo_track_options()
         analysing = bool(self.analysis_worker and self.analysis_worker.isRunning())
         ready = music_ok and cover_ok and output_ok and bool(track_options) and not analysing and self.worker is None
         missing = []
         if not music_ok:
-            missing.append("choose supported audio")
+            missing.append("choose audio")
         if not cover_ok:
             missing.append("choose a valid image or video")
         if not output_ok:
@@ -1810,9 +1829,9 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("Media Tools for Record Labels")
-    app.setOrganizationName("Media Tools for Record Labels")
-    app.setWindowIcon(QIcon(os.fspath(bundled_asset("media-tools-app-icon.png"))))
+    app.setApplicationName("MM Toolkit")
+    app.setOrganizationName("MM Toolkit")
+    app.setWindowIcon(QIcon(os.fspath(bundled_asset("mm-toolkit-icon.png"))))
     window = MainWindow()
     window.show()
     return app.exec()
