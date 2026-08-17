@@ -480,7 +480,10 @@ class ClipsTab(QWidget):
         self.play_button.clicked.connect(self.toggle_playback)
         self.timeline = QSlider(Qt.Orientation.Horizontal)
         self.timeline.setRange(0, 0)
-        self.timeline.sliderMoved.connect(self.player.setPosition)
+        self.timeline.sliderPressed.connect(self.on_timeline_pressed)
+        self.timeline.sliderMoved.connect(self.on_timeline_moved)
+        self.timeline.sliderReleased.connect(self.on_timeline_released)
+        self.timeline_was_playing = False
         self.time_label = QLabel("00:00:00 / 00:00:00")
         self.set_start_button = QPushButton("Set Start")
         self.set_end_button = QPushButton("Set End")
@@ -803,11 +806,34 @@ class ClipsTab(QWidget):
     def on_player_position(self, position: int) -> None:
         if not self.timeline.isSliderDown():
             self.timeline.setValue(position)
+        self.update_cutter_time_label(position)
+        if self.clip_preview_end_ms and position >= self.clip_preview_end_ms:
+            self.player.pause()
+
+    def update_cutter_time_label(self, position: int) -> None:
         self.time_label.setText(
             f"{format_timestamp(position / 1000)} / {format_timestamp(self.player.duration() / 1000)}"
         )
-        if self.clip_preview_end_ms and position >= self.clip_preview_end_ms:
+
+    def on_timeline_pressed(self) -> None:
+        self.timeline_was_playing = (
+            self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        )
+        if self.timeline_was_playing:
             self.player.pause()
+        self.stop_clip_preview()
+
+    def on_timeline_moved(self, position: int) -> None:
+        self.player.setPosition(position)
+        self.update_cutter_time_label(position)
+
+    def on_timeline_released(self) -> None:
+        position = self.timeline.value()
+        self.player.setPosition(position)
+        self.update_cutter_time_label(position)
+        if self.timeline_was_playing:
+            self.player.play()
+        self.timeline_was_playing = False
 
     def on_player_duration(self, duration: int) -> None:
         self.timeline.setRange(0, max(0, duration))
