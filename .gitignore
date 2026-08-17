@@ -6,3 +6,32 @@ venv/
 build/
 dist/
 *.spec.bak
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+credentials*.json
+secrets*.json
+
+# User media and generated outputs
+*.wav
+*.wave
+*.aif
+*.aiff
+*.flac
+*.mp3
+*.m4a
+*.aac
+*.ogg
+*.mp4
+*.mov
+*.m4v
+*.mkv
+*.avi
+*.webm
