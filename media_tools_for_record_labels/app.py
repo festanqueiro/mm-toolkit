@@ -27,11 +27,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QLayout,
     QListWidget,
     QMainWindow,
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QTabWidget,
@@ -106,6 +108,17 @@ def section_group(title: str, content_layout) -> QGroupBox:  # noqa: ANN001
         "}"
     )
     return group
+
+
+def scrollable(content: QWidget) -> QScrollArea:
+    """Keep dense feature screens readable instead of compressing their controls."""
+    if content.layout() is not None:
+        content.layout().setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setFrameShape(QFrame.Shape.NoFrame)
+    area.setWidget(content)
+    return area
 
 
 class RenderWorker(QThread):
@@ -738,7 +751,8 @@ class MainWindow(QMainWindow):
         self.worker: RenderWorker | None = None
         self.settings = QSettings("Media Tools for Record Labels", "Media Tools for Record Labels")
         self.setWindowTitle("Media Tools for Record Labels")
-        self.setMinimumSize(780, 570)
+        self.setMinimumSize(820, 620)
+        self.resize(1100, 820)
 
         title = QLabel("Promo Videos")
         title.setFont(QFont("", 24, QFont.Weight.DemiBold))
@@ -880,11 +894,11 @@ class MainWindow(QMainWindow):
         self.history = HistoryTab(self.settings)
         self.about = AboutTab()
         self.tabs = QTabWidget()
-        self.tabs.addTab(container, "Promo Videos")
-        self.tabs.addTab(self.clips, "Livestream Clips")
-        self.tabs.addTab(self.history, "History")
-        self.tabs.addTab(self.app_settings, "Settings")
-        self.tabs.addTab(self.about, "About")
+        self.tabs.addTab(scrollable(container), "Promo Videos")
+        self.tabs.addTab(scrollable(self.clips), "Livestream Clips")
+        self.tabs.addTab(scrollable(self.history), "History")
+        self.tabs.addTab(scrollable(self.app_settings), "Settings")
+        self.tabs.addTab(scrollable(self.about), "About")
         self.setCentralWidget(self.tabs)
 
         self.music.changed.connect(self.validate)
