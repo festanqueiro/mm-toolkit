@@ -475,6 +475,10 @@ class ClipsTab(QWidget):
         self.video_preview.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self.video_preview.hide()
         self.player.setVideoOutput(self.video_preview)
+        self.preview_prime_requested = False
+        self.preview_priming = False
+        self.preview_prime_was_muted = False
+        self.video_preview.videoSink().videoFrameChanged.connect(self.on_preview_frame_changed)
         self.play_button = QPushButton("▶ Play")
         self.play_button.setEnabled(False)
         self.play_button.clicked.connect(self.toggle_playback)
@@ -764,6 +768,31 @@ class ClipsTab(QWidget):
     def on_cutter_media_status(self, status) -> None:  # noqa: ANN001
         if status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
             self.start_clip_preview()
+            if self.preview_prime_requested and self.clip_preview_start_ms is None:
+                self.prime_video_preview()
+
+    def prime_video_preview(self) -> None:
+        if not self.preview_prime_requested or self.preview_priming:
+            return
+        self.preview_prime_requested = False
+        self.preview_priming = True
+        self.preview_prime_was_muted = self.player_audio.isMuted()
+        self.player_audio.setMuted(True)
+        self.player.play()
+
+    def on_preview_frame_changed(self, frame) -> None:  # noqa: ANN001
+        if not self.preview_priming or not frame.isValid():
+            return
+        self.player.pause()
+        self.player_audio.setMuted(self.preview_prime_was_muted)
+        self.preview_priming = False
+        self.play_button.setText("▶ Play")
+
+    def cancel_preview_priming(self) -> None:
+        if self.preview_priming:
+            self.player_audio.setMuted(self.preview_prime_was_muted)
+        self.preview_priming = False
+        self.preview_prime_requested = False
 
     def start_clip_preview(self) -> None:
         if self.clip_preview_start_ms is None or self.clip_preview_button is None:
@@ -786,12 +815,25 @@ class ClipsTab(QWidget):
         valid, _ = validate_media_source(path)
         kind = media_kind(path) if valid else None
         self.stop_clip_preview()
+        self.cancel_preview_priming()
         self.player.stop()
+        self.preview_prime_requested = kind == "video"
         self.player.setSource(QUrl.fromLocalFile(path) if valid else QUrl())
         self.video_preview.setVisible(kind == "video")
         self.play_button.setEnabled(valid and self.worker is None)
+        if self.player.mediaStatus() in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self.prime_video_preview()
 
     def toggle_playback(self) -> None:
+        if self.preview_priming:
+            self.player_audio.setMuted(self.preview_prime_was_muted)
+            self.preview_priming = False
+            self.preview_prime_requested = False
+            self.play_button.setText("Pause")
+            return
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         else:
@@ -799,7 +841,8 @@ class ClipsTab(QWidget):
             self.player.play()
 
     def on_playback_state(self, state) -> None:  # noqa: ANN001
-        self.play_button.setText("Pause" if state == QMediaPlayer.PlaybackState.PlayingState else "▶ Play")
+        if not self.preview_priming:
+            self.play_button.setText("Pause" if state == QMediaPlayer.PlaybackState.PlayingState else "▶ Play")
         if state != QMediaPlayer.PlaybackState.PlayingState:
             self.stop_clip_preview()
 
