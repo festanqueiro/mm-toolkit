@@ -281,6 +281,16 @@ class PathRow(QWidget):
         self.edit = QLineEdit()
         self.edit.setReadOnly(True)
         self.edit.setPlaceholderText("Nothing selected")
+        self.edit.setMinimumHeight(36)
+        self.edit.setStyleSheet(
+            "QLineEdit {"
+            "  color: palette(text);"
+            "  background-color: palette(base);"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 6px;"
+            "  padding: 5px 9px;"
+            "}"
+        )
         self.button = QPushButton("Choose…")
         self.button.clicked.connect(self.choose)
         self.directory_button: QPushButton | None = None
