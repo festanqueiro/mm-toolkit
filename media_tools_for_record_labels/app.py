@@ -1171,9 +1171,6 @@ class MainWindow(QMainWindow):
         self.artwork_preview.setStyleSheet(
             "QLabel { border: 1px solid palette(mid); border-radius: 8px; padding: 4px; }"
         )
-        self.preview_audio = QPushButton("▶ Play First Track")
-        self.preview_audio.setEnabled(False)
-        self.preview_audio.clicked.connect(self.play_first_track)
         self.bass_effect = QCheckBox("Bass-reactive zoom blur")
         self.bass_effect.setChecked(True)
         self.detect_drop = QCheckBox("Detect drop automatically")
@@ -1234,7 +1231,6 @@ class MainWindow(QMainWindow):
         artwork_layout.addWidget(self.artwork_preview)
         input_form.addRow("Artwork", artwork_row)
         input_form.addRow("", self.cover_status)
-        input_form.addRow("Audio preview", self.preview_audio)
 
         effects_form = QFormLayout()
         effects_form.setSpacing(12)
@@ -1559,14 +1555,8 @@ class MainWindow(QMainWindow):
             self.job_summary.setText(f"{len(track_options)} output(s), {total_seconds / 60:.1f} min total • {free_gb:.1f} GB free")
         else:
             self.job_summary.setText("Select audio to estimate this job.")
-        self.preview_audio.setEnabled(music_ok and self.worker is None)
         self.generate.setEnabled(ready)
         return ready
-
-    def play_first_track(self) -> None:
-        tracks = find_audio_files(self.music.path)
-        if tracks:
-            open_preview(self, tracks[0])
 
     def update_artwork_preview(self, cover_ok: bool) -> None:
         if not cover_ok:
@@ -1600,8 +1590,6 @@ class MainWindow(QMainWindow):
         ):
             control.setEnabled(enabled)
         self.clear_button.setEnabled(enabled)
-        if not enabled:
-            self.preview_audio.setEnabled(False)
 
     def cancel(self) -> None:
         if self.worker:

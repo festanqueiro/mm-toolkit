@@ -17,7 +17,7 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 - Turn the bass-reactive zoom blur on or off; when off, the artwork remains static.
 - Add one promo row per detected audio file and edit each track's start time and duration independently.
 - Enable automatic drop detection to populate every start time using a configurable lead-in (default: 2 seconds), or disable it for manual starts.
-- See an inline thumbnail of the selected artwork and play the first detected track in the system audio player.
+- See an inline thumbnail of the selected artwork.
 - Clear the complete form and saved selections to start fresh.
 - Choose artwork-native, vertical, square, or landscape output profiles.
 - Configure per-track duration plus shared frame rate, CRF quality, encoding speed, and audio bitrate.
