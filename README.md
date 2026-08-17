@@ -7,6 +7,7 @@
 A macOS-first desktop app for recurring record-label video workflows. The application uses a cross-platform Python/Qt codebase so the same UI can be packaged for Windows later.
 
 The macOS bundle, Windows executable, and application windows use the rounded platform-style Media Tools icon from `assets/`.
+Tab icons are bundled from [Google Material Icons](https://fonts.google.com/icons) under the Apache License 2.0; attribution details are in `assets/material-icons/NOTICE.md`.
 
 ## Promo Videos tab
 

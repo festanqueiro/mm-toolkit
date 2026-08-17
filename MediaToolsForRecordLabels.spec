@@ -11,6 +11,7 @@ brand_assets = [
     (str(project_root / "assets" / "Media tools app - just logo no bg.png"), "assets"),
     (str(project_root / "assets" / "Media tools app.png"), "assets"),
     (str(project_root / "assets" / "Media tools app - full logo no bg.png"), "assets"),
+    (str(project_root / "assets" / "material-icons"), "assets/material-icons"),
 ]
 app_icon = project_root / "assets" / (
     "media-tools-for-record-labels.ico" if sys.platform == "win32" else "media-tools-for-record-labels.icns"

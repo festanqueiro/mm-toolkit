@@ -10,10 +10,11 @@ import traceback
 from pathlib import Path
 from datetime import datetime
 
-from PySide6.QtCore import QSettings, QThread, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPixmap
+from PySide6.QtCore import QByteArray, QSettings, QThread, Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -36,7 +37,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSpinBox,
-    QStyle,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -121,6 +121,18 @@ def page_title(text: str) -> QLabel:
     title = QLabel(text)
     title.setFont(QFont("", 24, QFont.Weight.DemiBold))
     return title
+
+
+def material_icon(name: str, color: str) -> QIcon:
+    svg = bundled_asset(f"material-icons/{name}.svg").read_text(encoding="utf-8")
+    svg = svg.replace("<svg ", f'<svg fill="{color}" ', 1)
+    renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
+    pixmap = QPixmap(20, 20)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
 
 
 class RenderWorker(QThread):
@@ -1050,6 +1062,12 @@ class AboutTab(QWidget):
         )
         repository.setOpenExternalLinks(True)
         repository.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_credit = QLabel(
+            '<a href="https://fonts.google.com/icons">Google Material Icons</a> '
+            "used under the Apache License 2.0."
+        )
+        icon_credit.setOpenExternalLinks(True)
+        icon_credit.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
@@ -1061,6 +1079,7 @@ class AboutTab(QWidget):
         layout.addSpacing(10)
         layout.addWidget(description)
         layout.addWidget(repository)
+        layout.addWidget(icon_credit)
         layout.addStretch()
 
 
@@ -1311,13 +1330,13 @@ class MainWindow(QMainWindow):
         self.history = HistoryTab(self.settings)
         self.about = AboutTab()
         self.tabs = QTabWidget()
-        standard_icon = self.style().standardIcon
-        self.tabs.addTab(container, standard_icon(QStyle.StandardPixmap.SP_MediaPlay), "Promo Videos")
-        self.tabs.addTab(self.clips, standard_icon(QStyle.StandardPixmap.SP_FileDialogDetailedView), "Livestream Clips")
-        self.tabs.addTab(self.converter, standard_icon(QStyle.StandardPixmap.SP_BrowserReload), "Converter")
-        self.tabs.addTab(self.history, standard_icon(QStyle.StandardPixmap.SP_FileDialogContentsView), "History")
-        self.tabs.addTab(self.app_settings, standard_icon(QStyle.StandardPixmap.SP_ComputerIcon), "Settings")
-        self.tabs.addTab(self.about, standard_icon(QStyle.StandardPixmap.SP_MessageBoxInformation), "About")
+        icon_color = self.palette().color(QPalette.ColorRole.WindowText).name()
+        self.tabs.addTab(container, material_icon("music_video", icon_color), "Promo Videos")
+        self.tabs.addTab(self.clips, material_icon("content_cut", icon_color), "Livestream Clips")
+        self.tabs.addTab(self.converter, material_icon("swap_horiz", icon_color), "Converter")
+        self.tabs.addTab(self.history, material_icon("history", icon_color), "History")
+        self.tabs.addTab(self.app_settings, material_icon("settings", icon_color), "Settings")
+        self.tabs.addTab(self.about, material_icon("info", icon_color), "About")
         self.setCentralWidget(self.tabs)
 
         self.music.changed.connect(self.on_music_changed)
