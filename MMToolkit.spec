@@ -3,6 +3,7 @@
 from pathlib import Path
 import sys
 from PyInstaller.utils.hooks import copy_metadata
+from mm_toolkit import __version__
 
 project_root = Path(SPECPATH).resolve()
 package_metadata = copy_metadata("imageio") + copy_metadata("imageio-ffmpeg") + copy_metadata("moviepy")
@@ -54,5 +55,9 @@ if sys.platform == "darwin":
         name="MM Toolkit.app",
         icon=str(app_icon),
         bundle_identifier="com.mmtoolkit.app",
-        info_plist={"NSHighResolutionCapable": True},
+        info_plist={
+            "NSHighResolutionCapable": True,
+            "CFBundleShortVersionString": __version__,
+            "CFBundleVersion": __version__,
+        },
     )

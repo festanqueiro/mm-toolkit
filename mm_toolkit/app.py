@@ -369,7 +369,17 @@ class ClipsTab(QWidget):
         self.set_start_button = QPushButton("Set Start")
         self.set_end_button = QPushButton("Set End")
         self.active_clip_label = QLabel("Editing Clip 1")
-        self.active_clip_label.setStyleSheet("font-weight: 600; color: palette(highlight);")
+        self.active_clip_label.setMinimumHeight(38)
+        self.active_clip_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.active_clip_label.setStyleSheet(
+            "QLabel {"
+            "  color: white;"
+            "  background-color: #2563eb;"
+            "  border-radius: 8px;"
+            "  padding: 7px 12px;"
+            "  font-weight: 700;"
+            "}"
+        )
         self.set_start_button.clicked.connect(lambda: self.set_timestamp(1))
         self.set_end_button.clicked.connect(lambda: self.set_timestamp(2))
         self.player.positionChanged.connect(self.on_player_position)
@@ -391,6 +401,26 @@ class ClipsTab(QWidget):
         self.table.setHorizontalHeaderLabels(["Title", "Start", "End (optional)", "Duration", ""])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.setStyleSheet(
+            "QTableWidget {"
+            "  border: 1px solid rgba(127, 127, 127, 0.35);"
+            "  border-radius: 8px;"
+            "  background: palette(base);"
+            "  alternate-background-color: palette(alternate-base);"
+            "}"
+            "QHeaderView::section {"
+            "  background: palette(midlight);"
+            "  color: palette(text);"
+            "  border: 0;"
+            "  border-bottom: 1px solid palette(mid);"
+            "  padding: 9px 8px;"
+            "  font-weight: 700;"
+            "}"
+        )
         self.table.currentCellChanged.connect(self.update_active_clip)
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -477,6 +507,7 @@ class ClipsTab(QWidget):
             (3, duration, "60"),
         ):
             edit = ClipField(value)
+            edit.setMinimumHeight(34)
             edit.setPlaceholderText(placeholder)
             edit.textChanged.connect(self.validate)
             edit.focused.connect(lambda row=row, column=column: self.table.setCurrentCell(row, column))
@@ -492,9 +523,14 @@ class ClipsTab(QWidget):
             self.active_clip_label.setText("Select a clip to edit")
             return
         title = self.table.cellWidget(current_row, 0).text().strip() or f"Clip {current_row + 1:02d}"
-        self.active_clip_label.setText(f"Editing Clip {current_row + 1}: {title} — Set Start/End updates this row")
+        self.active_clip_label.setText(f"ACTIVE CLIP {current_row + 1}: {title}  •  Set Start/End updates this row")
         for row in range(self.table.rowCount()):
-            style = "border: 2px solid palette(highlight); border-radius: 4px;" if row == current_row else ""
+            style = (
+                "color: #0f172a; background-color: #dbeafe; "
+                "border: 2px solid #2563eb; border-radius: 5px; padding: 4px 7px;"
+                if row == current_row
+                else "padding: 4px 7px;"
+            )
             for column in range(self.table.columnCount()):
                 widget = self.table.cellWidget(row, column)
                 if widget:
@@ -990,8 +1026,28 @@ class SettingsTab(QWidget):
         if saved_output and Path(saved_output).is_dir():
             self.default_output.edit.setText(saved_output)
 
+        settings_inputs = (
+            self.default_output.edit,
+            self.default_output.button,
+            self.notify_finished,
+            self.promo_naming,
+            self.clip_naming,
+            self.conflict_policy,
+        )
+        for widget in settings_inputs:
+            widget.setMinimumHeight(42)
+        self.promo_naming.setMinimumWidth(420)
+        self.clip_naming.setMinimumWidth(420)
+        self.conflict_policy.setMinimumWidth(260)
+        input_font = QFont()
+        input_font.setPointSize(14)
+        self.promo_naming.setFont(input_font)
+        self.clip_naming.setFont(input_font)
+        self.conflict_policy.setFont(input_font)
+
         form = QFormLayout()
-        form.setSpacing(12)
+        form.setSpacing(18)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         form.addRow("Default Folder for Export", self.default_output)
         form.addRow("", self.output_status)
         form.addRow("Notifications", self.notify_finished)
