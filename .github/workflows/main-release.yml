@@ -1,0 +1,77 @@
+name: Main Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: main-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build release (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Build application
+        run: python -m PyInstaller --noconfirm --clean MediaToolsForRecordLabels.spec
+
+      - name: Create macOS ZIP
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/Media Tools for Record Labels.app" media-tools-for-record-labels-macos.zip
+
+      - name: Create Windows ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "dist/Media Tools for Record Labels" -DestinationPath media-tools-for-record-labels-windows.zip
+
+      - name: Upload release ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ runner.os }}
+          path: media-tools-for-record-labels-*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-files
+
+      - name: Create release and attach ZIPs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: release-${{ github.run_number }}
+        run: |
+          gh release create "$TAG" release-files/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Media Tools for Record Labels $TAG" \
+            --generate-notes
