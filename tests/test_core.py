@@ -46,6 +46,8 @@ def test_render_defaults_preserve_original_effect() -> None:
     settings = RenderSettings()
     assert settings.bass_effect is True
     assert settings.mute_original_video_audio is True
+    assert settings.video_fade is True
+    assert settings.audio_fade is True
     assert settings.pre_drop == 2.0
     assert settings.duration == 60.0
     assert settings.size is None
