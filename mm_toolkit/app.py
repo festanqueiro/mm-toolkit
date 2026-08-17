@@ -464,17 +464,14 @@ class ClipsTab(QWidget):
         self.time_label = QLabel("00:00:00 / 00:00:00")
         self.set_start_button = QPushButton("Set Start")
         self.set_end_button = QPushButton("Set End")
-        self.active_clip_label = QLabel("Editing Clip 1")
-        self.active_clip_label.setMinimumHeight(38)
-        self.active_clip_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.active_clip_label = QLabel("Editing: Clip 01")
+        self.active_clip_label.setFixedHeight(32)
+        self.active_clip_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         self.active_clip_label.setStyleSheet(
             "QLabel {"
             "  color: palette(text);"
-            "  background-color: palette(alternate-base);"
-            "  border: 1px solid palette(mid);"
-            "  border-radius: 8px;"
-            "  padding: 7px 12px;"
-            "  font-weight: 700;"
+            "  padding: 0 6px;"
+            "  font-weight: 600;"
             "}"
         )
         self.set_start_button.clicked.connect(lambda: self.set_timestamp(1))
@@ -563,9 +560,9 @@ class ClipsTab(QWidget):
         timeline_row.addWidget(self.timeline, 1)
         timeline_row.addWidget(self.time_label)
         clip_input_layout.addLayout(timeline_row)
-        clip_input_layout.addWidget(self.active_clip_label)
         playback_actions = QHBoxLayout()
         playback_actions.addWidget(self.play_button)
+        playback_actions.addWidget(self.active_clip_label)
         playback_actions.addStretch()
         playback_actions.addWidget(self.set_start_button)
         playback_actions.addWidget(self.set_end_button)
@@ -645,10 +642,10 @@ class ClipsTab(QWidget):
 
     def update_active_clip(self, current_row: int, _current_column: int, _previous_row: int, _previous_column: int) -> None:
         if current_row < 0:
-            self.active_clip_label.setText("Select a clip to edit")
+            self.active_clip_label.setText("Editing: select a clip")
             return
         title = self.table.cellWidget(current_row, 0).text().strip() or f"Clip {current_row + 1:02d}"
-        self.active_clip_label.setText(f"Editing clip {current_row + 1}: {title}  •  Set Start/End updates this row")
+        self.active_clip_label.setText(f"Editing: {title}")
         for row in range(self.table.rowCount()):
             for column in range(self.table.columnCount()):
                 widget = self.table.cellWidget(row, column)
