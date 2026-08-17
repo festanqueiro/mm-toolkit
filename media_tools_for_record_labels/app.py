@@ -16,6 +16,7 @@ from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -233,6 +234,14 @@ class PathRow(QWidget):
             self.directory_button.setEnabled(enabled)
 
 
+class ClipField(QLineEdit):
+    focused = Signal()
+
+    def focusInEvent(self, event) -> None:  # noqa: N802, ANN001
+        super().focusInEvent(event)
+        self.focused.emit()
+
+
 class ClipsTab(QWidget):
     job_completed = Signal(object)
     def __init__(self, settings: QSettings):
@@ -272,6 +281,8 @@ class ClipsTab(QWidget):
         self.time_label = QLabel("00:00:00 / 00:00:00")
         self.set_start_button = QPushButton("Set Start")
         self.set_end_button = QPushButton("Set End")
+        self.active_clip_label = QLabel("Editing Clip 1")
+        self.active_clip_label.setStyleSheet("font-weight: 600; color: palette(highlight);")
         self.set_start_button.clicked.connect(lambda: self.set_timestamp(1))
         self.set_end_button.clicked.connect(lambda: self.set_timestamp(2))
         self.player.positionChanged.connect(self.on_player_position)
@@ -291,6 +302,9 @@ class ClipsTab(QWidget):
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["Title", "Start", "End (optional)", "Duration", ""])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.currentCellChanged.connect(self.update_active_clip)
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -328,6 +342,7 @@ class ClipsTab(QWidget):
         timeline_row.addWidget(self.timeline, 1)
         timeline_row.addWidget(self.time_label)
         clip_input_layout.addLayout(timeline_row)
+        clip_input_layout.addWidget(self.active_clip_label)
         playback_actions = QHBoxLayout()
         playback_actions.addWidget(self.play_button)
         playback_actions.addStretch()
@@ -374,14 +389,29 @@ class ClipsTab(QWidget):
             (2, end, "Optional"),
             (3, duration, "60"),
         ):
-            edit = QLineEdit(value)
+            edit = ClipField(value)
             edit.setPlaceholderText(placeholder)
             edit.textChanged.connect(self.validate)
+            edit.focused.connect(lambda row=row, column=column: self.table.setCurrentCell(row, column))
             self.table.setCellWidget(row, column, edit)
         remove = QPushButton("Remove")
         remove.clicked.connect(lambda _checked=False, button=remove: self.remove_row(button))
         self.table.setCellWidget(row, 4, remove)
+        self.table.setCurrentCell(row, 0)
         self.validate()
+
+    def update_active_clip(self, current_row: int, _current_column: int, _previous_row: int, _previous_column: int) -> None:
+        if current_row < 0:
+            self.active_clip_label.setText("Select a clip to edit")
+            return
+        title = self.table.cellWidget(current_row, 0).text().strip() or f"Clip {current_row + 1:02d}"
+        self.active_clip_label.setText(f"Editing Clip {current_row + 1}: {title} — Set Start/End updates this row")
+        for row in range(self.table.rowCount()):
+            style = "border: 2px solid palette(highlight); border-radius: 4px;" if row == current_row else ""
+            for column in range(self.table.columnCount()):
+                widget = self.table.cellWidget(row, column)
+                if widget:
+                    widget.setStyleSheet(style)
 
     def remove_row(self, button: QPushButton) -> None:
         for row in range(self.table.rowCount()):
