@@ -109,12 +109,3 @@ py -m venv .venv
 PyInstaller must build each platform on that platform; a Windows executable cannot be produced reliably from macOS. The release workflow builds the Windows package on a Windows GitHub Actions runner.
 
 Main-branch releases produce both a portable ZIP and an Inno Setup `.exe` installer. Optional signing uses the `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD` repository secrets; credentials are never stored in this public repository.
-
-## Defaults inherited from the original script
-
-- Visual-native output resolution (odd dimensions are reduced by one pixel for H.264 compatibility)
-- 24 fps
-- 60-second snippet
-- Snippet begins 2 seconds before the detected drop
-- 0.5-second audio and video fades
-- H.264 video, AAC audio at 256 kbps
