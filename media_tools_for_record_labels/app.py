@@ -1254,8 +1254,6 @@ class MainWindow(QMainWindow):
         input_form.setSpacing(12)
         input_form.addRow("Audio", self.music)
         input_form.addRow("", self.music_status)
-        input_form.addRow("Automatic start", self.detect_drop)
-        input_form.addRow("Seconds before drop", self.pre_drop)
         artwork_row = QWidget()
         artwork_layout = QHBoxLayout(artwork_row)
         artwork_layout.setContentsMargins(0, 0, 0, 0)
@@ -1274,6 +1272,14 @@ class MainWindow(QMainWindow):
         promo_clips_layout = QVBoxLayout()
         promo_clips_layout.addWidget(self.analysis_status)
         promo_clips_layout.addWidget(self.promo_tracks, 1)
+        self.timing_options = QWidget()
+        timing_options_form = QFormLayout(self.timing_options)
+        timing_options_form.setContentsMargins(0, 4, 0, 0)
+        timing_options_form.setSpacing(8)
+        timing_options_form.addRow("Automatic start", self.detect_drop)
+        timing_options_form.addRow("Seconds before drop", self.pre_drop)
+        self.timing_options.setVisible(False)
+        promo_clips_layout.addWidget(self.timing_options)
 
         output_form = QFormLayout()
         output_form.setSpacing(12)
@@ -1468,6 +1474,7 @@ class MainWindow(QMainWindow):
                     self.promo_tracks.cellWidget(row, 2).value(),
                 )
         tracks = find_audio_files(self.music.path)
+        self.timing_options.setVisible(bool(tracks))
         self.promo_tracks.setRowCount(0)
         for row, track in enumerate(tracks):
             self.promo_tracks.insertRow(row)
