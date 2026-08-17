@@ -317,6 +317,10 @@ def render_track(
         audio = AudioFadeOut(fade).apply(AudioFadeIn(fade).apply(AudioFileClip(os.fspath(trimmed))))
         video = VideoClip(make_frame, duration=actual_duration)
         video = FadeOut(fade).apply(FadeIn(fade).apply(video)).with_audio(audio)
+        # MoviePy otherwise derives a relative temporary-audio filename from the
+        # output name. A packaged macOS app can start in its read-only bundle,
+        # causing FFmpeg to fail with "Read-only file system" / "Broken pipe".
+        temp_audio = scratch_path / "moviepy-audio.m4a"
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             video.write_videofile(
@@ -327,6 +331,8 @@ def render_track(
                 audio_bitrate=settings.audio_bitrate,
                 preset=settings.preset,
                 threads=max(1, min(4, os.cpu_count() or 1)),
+                temp_audiofile=os.fspath(temp_audio),
+                remove_temp=True,
                 ffmpeg_params=["-pix_fmt", "yuv420p", "-crf", str(settings.crf)],
                 logger=_MoviePyLogger(progress),
             )
