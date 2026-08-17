@@ -6,10 +6,14 @@
 
 **Audio & Video tools for all**
 
-A cross-platform desktop toolkit for recurring audio and video workflows used by artists, labels, promoters, and creators.
+Create and prepare music content from one desktop app:
 
-The macOS bundle, Windows executable, and application windows use the MM Toolkit icon from `assets/`.
-Tab icons are bundled from [Google Material Icons](https://fonts.google.com/icons) under the Apache License 2.0; attribution details are in `assets/material-icons/NOTICE.md`.
+- Generate music videos from audio and artwork.
+- Find the drop, set timestamps, and preview promo clips.
+- Cut short clips from livestream recordings.
+- Convert audio and video files into common formats.
+
+Available for macOS and Windows.
 
 ## Video Generator tab
 
