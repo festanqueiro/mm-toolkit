@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSpinBox,
+    QStyle,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -482,7 +483,7 @@ class ClipsTab(QWidget):
         self.player.durationChanged.connect(self.on_player_duration)
         self.player.playbackStateChanged.connect(self.on_playback_state)
         self.player.mediaStatusChanged.connect(self.on_cutter_media_status)
-        self.clip_preview_button: QPushButton | None = None
+        self.clip_preview_button: QToolButton | None = None
         self.clip_preview_start_ms: int | None = None
         self.clip_preview_end_ms = 0
 
@@ -497,7 +498,7 @@ class ClipsTab(QWidget):
         output_form.addRow("", self.output_status)
 
         self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["Title", "Start", "End", "Duration", "Preview", ""])
+        self.table.setHorizontalHeaderLabels(["Title", "Start", "End", "Duration", "", ""])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
@@ -524,11 +525,11 @@ class ClipsTab(QWidget):
         )
         self.table.currentCellChanged.connect(self.update_active_clip)
         self.table.horizontalHeader().setStretchLastSection(False)
-        self.table.horizontalHeader().setMinimumSectionSize(60)
+        self.table.horizontalHeader().setMinimumSectionSize(36)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         for column in (1, 2, 3, 4, 5):
             self.table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
-        for column, width in enumerate((100, 82, 82, 70, 64, 60)):
+        for column, width in enumerate((110, 82, 82, 70, 42, 42)):
             self.table.setColumnWidth(column, width)
         self.table.setMinimumHeight(150)
         self.add_button = QPushButton("+ Add clip")
@@ -621,20 +622,22 @@ class ClipsTab(QWidget):
                 edit.textChanged.connect(lambda _text, row=row: self.on_clip_timing_changed(row))
             edit.focused.connect(lambda row=row, column=column: self.table.setCurrentCell(row, column))
             self.table.setCellWidget(row, column, edit)
-        preview = QPushButton("▶")
+        preview = QToolButton()
+        preview.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         preview.setToolTip("Play this clip")
         preview.setAccessibleName(f"Play clip {row + 1}")
-        preview.setFixedHeight(38)
-        preview.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
+        preview.setAutoRaise(True)
+        preview.setFixedSize(36, 36)
         preview.clicked.connect(
             lambda _checked=False, button=preview: self.toggle_clip_preview_button(button)
         )
         self.table.setCellWidget(row, 4, preview)
-        remove = QPushButton("×")
+        remove = QToolButton()
+        remove.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
         remove.setToolTip("Remove this clip")
         remove.setAccessibleName(f"Remove clip {row + 1}")
-        remove.setFixedHeight(38)
-        remove.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
+        remove.setAutoRaise(True)
+        remove.setFixedSize(36, 36)
         remove.clicked.connect(lambda _checked=False, button=remove: self.remove_row(button))
         self.table.setCellWidget(row, 5, remove)
         self.table.setCurrentCell(row, 0)
@@ -650,6 +653,8 @@ class ClipsTab(QWidget):
             for column in range(self.table.columnCount()):
                 widget = self.table.cellWidget(row, column)
                 if widget:
+                    if isinstance(widget, QToolButton):
+                        continue
                     base_style = (
                         TIMESTAMP_BUTTON_STYLE
                         if isinstance(widget, QPushButton)
@@ -662,7 +667,7 @@ class ClipsTab(QWidget):
                     )
                     widget.setStyleSheet(base_style + active_style)
 
-    def remove_row(self, button: QPushButton) -> None:
+    def remove_row(self, button: QToolButton) -> None:
         self.stop_clip_preview()
         for row in range(self.table.rowCount()):
             if self.table.cellWidget(row, 5) is button:
@@ -703,7 +708,7 @@ class ClipsTab(QWidget):
         if self.table.cellWidget(row, 4) is self.clip_preview_button:
             self.stop_clip_preview()
 
-    def toggle_clip_preview(self, row: int, button: QPushButton) -> None:
+    def toggle_clip_preview(self, row: int, button: QToolButton) -> None:
         if self.clip_preview_button is button and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
             return
@@ -719,7 +724,7 @@ class ClipsTab(QWidget):
         self.clip_preview_button = button
         self.clip_preview_start_ms = round(clip.start * 1000)
         self.clip_preview_end_ms = round((clip.start + clip.duration) * 1000)
-        button.setText("■")
+        button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
         button.setToolTip("Stop this clip")
         if self.player.mediaStatus() in (
             QMediaPlayer.MediaStatus.LoadedMedia,
@@ -727,7 +732,7 @@ class ClipsTab(QWidget):
         ):
             self.start_clip_preview()
 
-    def toggle_clip_preview_button(self, button: QPushButton) -> None:
+    def toggle_clip_preview_button(self, button: QToolButton) -> None:
         for row in range(self.table.rowCount()):
             if self.table.cellWidget(row, 4) is button:
                 self.toggle_clip_preview(row, button)
@@ -751,7 +756,7 @@ class ClipsTab(QWidget):
         self.clip_preview_start_ms = None
         self.clip_preview_end_ms = 0
         if button:
-            button.setText("▶")
+            button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
             button.setToolTip("Play this clip")
 
     def load_media_preview(self, path: str) -> None:
