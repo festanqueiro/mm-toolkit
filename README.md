@@ -75,6 +75,8 @@ open "dist/Media Tools for Record Labels.app"
 
 The first unsigned build may need to be opened with Control-click → Open. Distribution to other Macs should add Apple signing and notarization. The build includes `imageio-ffmpeg` as a fallback, while preferring an FFmpeg installation already available on the machine.
 
+Main-branch releases produce both a ZIP and native DMG. When macOS certificate/notarization secrets are configured, the release workflow signs and notarizes the app without storing credentials in the repository.
+
 ## Windows path
 
 The engine and UI contain no macOS-only APIs. On a Windows machine with Python and FFmpeg installed:
@@ -85,7 +87,9 @@ py -m venv .venv
 .\scripts\build_windows.ps1
 ```
 
-PyInstaller must build each platform on that platform; a Windows executable cannot be produced reliably from macOS. A future release can run this command in a Windows GitHub Actions job and package the result as an installer.
+PyInstaller must build each platform on that platform; a Windows executable cannot be produced reliably from macOS. The release workflow builds the Windows package on a Windows GitHub Actions runner.
+
+Main-branch releases produce both a portable ZIP and an Inno Setup `.exe` installer. Optional signing uses the `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD` repository secrets; credentials are never stored in this public repository.
 
 ## Defaults inherited from the original script
 
