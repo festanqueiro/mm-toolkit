@@ -329,7 +329,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.worker: RenderWorker | None = None
-        self.settings = QSettings("Record Label Media Tools", "Media Tools for Record Labels")
+        self.settings = QSettings("Media Tools for Record Labels", "Media Tools for Record Labels")
         self.setWindowTitle("Media Tools for Record Labels")
         self.setMinimumSize(780, 570)
 
@@ -525,7 +525,7 @@ class MainWindow(QMainWindow):
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Media Tools for Record Labels")
-    app.setOrganizationName("Record Label Media Tools")
+    app.setOrganizationName("Media Tools for Record Labels")
     window = MainWindow()
     window.show()
     return app.exec()

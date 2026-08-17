@@ -36,7 +36,7 @@ brew install ffmpeg
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m promo_video_generator
+python -m media_tools_for_record_labels
 ```
 
 Rendering at the default 2000×2000, 24 fps, 60 seconds is intentionally compute-heavy.

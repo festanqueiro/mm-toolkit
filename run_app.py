@@ -1,6 +1,6 @@
 """PyInstaller-friendly application entry point."""
 
-from promo_video_generator.app import main
+from media_tools_for_record_labels.app import main
 
 
 if __name__ == "__main__":

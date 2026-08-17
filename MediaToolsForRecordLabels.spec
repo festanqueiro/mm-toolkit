@@ -13,7 +13,7 @@ a = Analysis(
     binaries=[],
     datas=package_metadata,
     hiddenimports=[
-        "promo_video_generator.core",
+        "media_tools_for_record_labels.core",
         "moviepy.audio.fx.AudioFadeIn",
         "moviepy.audio.fx.AudioFadeOut",
         "moviepy.video.fx.FadeIn",

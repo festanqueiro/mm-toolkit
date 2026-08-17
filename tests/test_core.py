@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from promo_video_generator.core import (
+from media_tools_for_record_labels.core import (
     AUDIO_EXTENSIONS,
     RenderSettings,
     find_audio_files,
