@@ -26,6 +26,7 @@ Tab icons are bundled from [Google Material Icons](https://fonts.google.com/icon
 - Turn the bass-reactive zoom blur on or off; when off, the selected image or video is preserved without that effect.
 - Enable or disable video and audio fade-in/fade-out independently.
 - Add one promo row per detected audio file and edit each track's start time and duration independently.
+- Listen to each configured promo clip directly from its Audio timestamps row before rendering.
 - Enable automatic drop detection to populate every start time using a configurable lead-in (default: 2 seconds), or disable it for manual starts.
 - See an inline thumbnail of the selected image or the first frame of the selected video.
 - Clear the complete form and saved selections to start fresh.

@@ -1274,12 +1274,20 @@ class MainWindow(QMainWindow):
         self.pre_drop.setValue(2.0)
         self.detect_drop.toggled.connect(self.on_detect_drop_changed)
         self.pre_drop.editingFinished.connect(self.start_drop_detection)
-        self.promo_tracks = QTableWidget(0, 3)
-        self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration"])
+        self.promo_tracks = QTableWidget(0, 4)
+        self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration", "Preview"])
         self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.promo_tracks.setMinimumHeight(50)
+        self.promo_preview_player = QMediaPlayer(self)
+        self.promo_preview_audio = QAudioOutput(self)
+        self.promo_preview_player.setAudioOutput(self.promo_preview_audio)
+        self.promo_preview_player.positionChanged.connect(self.on_promo_preview_position)
+        self.promo_preview_player.playbackStateChanged.connect(self.on_promo_preview_state)
+        self.promo_preview_end_ms = 0
+        self.promo_preview_button: QPushButton | None = None
         self.analysis_status = QLabel("")
         self.analysis_status.setWordWrap(True)
         self.profile = QComboBox()
@@ -1527,6 +1535,7 @@ class MainWindow(QMainWindow):
         self.validate()
 
     def refresh_promo_tracks(self) -> None:
+        self.stop_promo_preview()
         previous: dict[str, tuple[str, float]] = {}
         for row in range(self.promo_tracks.rowCount()):
             item = self.promo_tracks.item(row, 0)
@@ -1555,14 +1564,71 @@ class MainWindow(QMainWindow):
             duration.setSuffix(" s")
             duration.setValue(old_duration)
             duration.valueChanged.connect(self.validate)
+            preview = QPushButton("▶ Listen")
+            preview.setToolTip("Listen to this clip using its Start and Duration values")
+            preview.clicked.connect(
+                lambda _checked=False, row=row, button=preview: self.toggle_promo_preview(row, button)
+            )
             self.promo_tracks.setCellWidget(row, 1, start)
             self.promo_tracks.setCellWidget(row, 2, duration)
+            self.promo_tracks.setCellWidget(row, 3, preview)
         if tracks and self.detect_drop.isChecked():
             self.start_drop_detection()
         elif tracks:
             self.analysis_status.setText("Manual start times — edit each row as needed.")
         else:
             self.analysis_status.clear()
+
+    def toggle_promo_preview(self, row: int, button: QPushButton) -> None:
+        if (
+            self.promo_preview_button is button
+            and self.promo_preview_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        ):
+            self.stop_promo_preview()
+            return
+
+        item = self.promo_tracks.item(row, 0)
+        if item is None:
+            return
+        try:
+            start_seconds = parse_timestamp(self.promo_tracks.cellWidget(row, 1).text())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Preview unavailable", str(exc))
+            return
+        duration_seconds = self.promo_tracks.cellWidget(row, 2).value()
+        source = Path(item.data(Qt.ItemDataRole.UserRole))
+        if not source.is_file():
+            QMessageBox.warning(self, "Preview unavailable", f"Audio file not found:\n{source}")
+            return
+
+        self.stop_promo_preview()
+        self.promo_preview_button = button
+        self.promo_preview_end_ms = round((start_seconds + duration_seconds) * 1000)
+        self.promo_preview_player.setSource(QUrl.fromLocalFile(os.fspath(source)))
+        self.promo_preview_player.setPosition(round(start_seconds * 1000))
+        self.promo_preview_player.play()
+        button.setText("■ Stop")
+        self.analysis_status.setText(
+            f"Listening to {source.name} from {format_timestamp(start_seconds)} for {duration_seconds:g} seconds."
+        )
+
+    def on_promo_preview_position(self, position: int) -> None:
+        if self.promo_preview_end_ms and position >= self.promo_preview_end_ms:
+            self.stop_promo_preview()
+
+    def on_promo_preview_state(self, state) -> None:  # noqa: ANN001
+        if state == QMediaPlayer.PlaybackState.StoppedState and self.promo_preview_button:
+            self.promo_preview_button.setText("▶ Listen")
+            self.promo_preview_button = None
+            self.promo_preview_end_ms = 0
+
+    def stop_promo_preview(self) -> None:
+        button = self.promo_preview_button
+        self.promo_preview_button = None
+        self.promo_preview_end_ms = 0
+        self.promo_preview_player.stop()
+        if button:
+            button.setText("▶ Listen")
 
     def promo_track_options(self) -> tuple[dict[Path, tuple[float, float]], str]:
         options: dict[Path, tuple[float, float]] = {}
@@ -1725,6 +1791,8 @@ class MainWindow(QMainWindow):
         )
 
     def set_inputs_enabled(self, enabled: bool) -> None:
+        if not enabled:
+            self.stop_promo_preview()
         for row in (self.music, self.cover, self.output):
             row.set_enabled(enabled)
         self.bass_effect.setEnabled(enabled)
@@ -1753,6 +1821,7 @@ class MainWindow(QMainWindow):
             self.worker.requestInterruption()
 
     def clear(self) -> None:
+        self.stop_promo_preview()
         self.music.set_path("")
         self.cover.set_path("")
         self.output.set_path(self.settings.value("general/default_output", ""))
@@ -1880,6 +1949,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Rendering in progress", "Wait for rendering to finish before closing the app.")
             event.ignore()
             return
+        self.stop_promo_preview()
         event.accept()
 
 
