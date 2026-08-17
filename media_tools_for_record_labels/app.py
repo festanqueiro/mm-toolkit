@@ -326,7 +326,7 @@ class ClipsTab(QWidget):
 
     def clear(self) -> None:
         self.source.set_path("")
-        self.output.set_path("")
+        self.output.set_path(self.settings.value("general/default_output", ""))
         self.table.setRowCount(0)
         self.add_row()
         self.progress.setValue(0)
@@ -361,11 +361,12 @@ class ClipsTab(QWidget):
         self.progress_status.setText(status)
 
     def on_success(self, outputs: list[str]) -> None:
-        QMessageBox.information(
-            self,
-            "Clips created",
-            f"Created {len(outputs)} clip{'s' if len(outputs) != 1 else ''} in:\n{self.output.path}",
-        )
+        if self.settings.value("general/notify_finished", True, type=bool):
+            QMessageBox.information(
+                self,
+                "Clips created",
+                f"Created {len(outputs)} clip{'s' if len(outputs) != 1 else ''} in:\n{self.output.path}",
+            )
 
     def on_failure(self, message: str) -> None:
         QMessageBox.critical(self, "Clip creation failed", message)
@@ -377,6 +378,63 @@ class ClipsTab(QWidget):
         self.validate()
         if worker:
             worker.deleteLater()
+
+
+class SettingsTab(QWidget):
+    changed = Signal()
+
+    def __init__(self, settings: QSettings):
+        super().__init__()
+        self.settings = settings
+        title = QLabel("Settings")
+        title.setFont(QFont("", 24, QFont.Weight.DemiBold))
+        subtitle = QLabel("Defaults shared by all Media Tools features.")
+        self.default_output = PathRow("Choose default export folder", "directory")
+        self.output_status = QLabel("")
+        self.notify_finished = QCheckBox("Show a popup when processing finishes")
+        self.notify_finished.setChecked(
+            self.settings.value("general/notify_finished", True, type=bool)
+        )
+        saved_output = self.settings.value("general/default_output", "")
+        if saved_output and Path(saved_output).is_dir():
+            self.default_output.edit.setText(saved_output)
+
+        form = QFormLayout()
+        form.setSpacing(12)
+        form.addRow("Default Folder for Export", self.default_output)
+        form.addRow("", self.output_status)
+        form.addRow("Notifications", self.notify_finished)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(14)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addWidget(section_group("General", form))
+        layout.addStretch()
+
+        self.default_output.changed.connect(self.save)
+        self.notify_finished.toggled.connect(self.save)
+        self.validate()
+
+    def validate(self) -> None:
+        path = Path(self.default_output.path).expanduser() if self.default_output.path else None
+        valid = bool(path and path.is_dir() and os.access(path, os.W_OK))
+        self.output_status.setText(
+            "✓ Default export folder is writable."
+            if valid
+            else "Optional: choose a writable folder to prefill exports."
+        )
+
+    def save(self, *_args) -> None:  # noqa: ANN002
+        path = self.default_output.path
+        if path and Path(path).is_dir() and os.access(path, os.W_OK):
+            self.settings.setValue("general/default_output", path)
+        elif not path:
+            self.settings.remove("general/default_output")
+        self.settings.setValue("general/notify_finished", self.notify_finished.isChecked())
+        self.validate()
+        self.changed.emit()
 
 
 class AboutTab(QWidget):
@@ -524,17 +582,21 @@ class MainWindow(QMainWindow):
         layout.addLayout(actions)
         layout.addStretch()
         self.clips = ClipsTab(self.settings)
+        self.app_settings = SettingsTab(self.settings)
         self.about = AboutTab()
         tabs = QTabWidget()
         tabs.addTab(container, "Promo Videos")
         tabs.addTab(self.clips, "Livestream Clips")
+        tabs.addTab(self.app_settings, "Settings")
         tabs.addTab(self.about, "About")
         self.setCentralWidget(tabs)
 
         self.music.changed.connect(self.validate)
         self.cover.changed.connect(self.validate)
         self.output.changed.connect(self.validate)
+        self.app_settings.changed.connect(self.apply_app_settings)
         self.restore_paths()
+        self.apply_app_settings()
         self.validate()
 
     def restore_paths(self) -> None:
@@ -544,6 +606,14 @@ class MainWindow(QMainWindow):
                 row.edit.setText(value)
         self.bass_effect.setChecked(self.settings.value("promo/bass_effect", True, type=bool))
         self.pre_drop.setValue(self.settings.value("promo/pre_drop", 2.0, type=float))
+
+    def apply_app_settings(self) -> None:
+        default_output = self.settings.value("general/default_output", "")
+        if default_output and Path(default_output).is_dir():
+            if not self.output.path:
+                self.output.set_path(default_output)
+            if not self.clips.output.path:
+                self.clips.output.set_path(default_output)
 
     def validate(self) -> bool:
         tracks = find_audio_files(self.music.path)
@@ -597,7 +667,7 @@ class MainWindow(QMainWindow):
     def clear(self) -> None:
         self.music.set_path("")
         self.cover.set_path("")
-        self.output.set_path("")
+        self.output.set_path(self.settings.value("general/default_output", ""))
         self.bass_effect.setChecked(True)
         self.pre_drop.setValue(2.0)
         self.progress.setValue(0)
@@ -643,11 +713,12 @@ class MainWindow(QMainWindow):
         self.progress_status.setText(status)
 
     def on_success(self, outputs: list[str]) -> None:
-        QMessageBox.information(
-            self,
-            "Videos generated",
-            f"Created {len(outputs)} promo video{'s' if len(outputs) != 1 else ''} in:\n{self.output.path}",
-        )
+        if self.settings.value("general/notify_finished", True, type=bool):
+            QMessageBox.information(
+                self,
+                "Videos generated",
+                f"Created {len(outputs)} promo video{'s' if len(outputs) != 1 else ''} in:\n{self.output.path}",
+            )
 
     def on_failure(self, message: str) -> None:
         QMessageBox.critical(self, "Generation failed", message)

@@ -35,6 +35,11 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 
 Displays the transparent full brand lockup, current application version, open-source description, and GitHub repository link.
 
+## Settings tab
+
+- Choose a default export folder shared by all tools.
+- Enable or disable completion popups with **Notify when finished**.
+
 ## Run on macOS during development
 
 Requirements: Python 3.11+. Installing a system FFmpeg is recommended for development; the packaged app can fall back to its bundled media binary.
