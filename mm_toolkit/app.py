@@ -1429,7 +1429,9 @@ class MainWindow(QMainWindow):
         self.promo_preview_player.setAudioOutput(self.promo_preview_audio)
         self.promo_preview_player.positionChanged.connect(self.on_promo_preview_position)
         self.promo_preview_player.playbackStateChanged.connect(self.on_promo_preview_state)
+        self.promo_preview_player.mediaStatusChanged.connect(self.on_promo_preview_media_status)
         self.promo_preview_end_ms = 0
+        self.promo_preview_start_ms: int | None = None
         self.promo_preview_button: QPushButton | None = None
         self.analysis_status = QLabel("")
         self.analysis_status.setWordWrap(True)
@@ -1753,14 +1755,33 @@ class MainWindow(QMainWindow):
 
         self.stop_promo_preview()
         self.promo_preview_button = button
+        self.promo_preview_start_ms = round(start_seconds * 1000)
         self.promo_preview_end_ms = round((start_seconds + duration_seconds) * 1000)
         self.promo_preview_player.setSource(QUrl.fromLocalFile(os.fspath(source)))
-        self.promo_preview_player.setPosition(round(start_seconds * 1000))
-        self.promo_preview_player.play()
+        if self.promo_preview_player.mediaStatus() in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self.start_promo_preview_playback()
         button.setText("■ Stop")
         self.analysis_status.setText(
             f"Listening to {source.name} from {format_timestamp(start_seconds)} for {duration_seconds:g} seconds."
         )
+
+    def on_promo_preview_media_status(self, status) -> None:  # noqa: ANN001
+        if status in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self.start_promo_preview_playback()
+
+    def start_promo_preview_playback(self) -> None:
+        if self.promo_preview_start_ms is None or self.promo_preview_button is None:
+            return
+        start_ms = self.promo_preview_start_ms
+        self.promo_preview_start_ms = None
+        self.promo_preview_player.setPosition(start_ms)
+        self.promo_preview_player.play()
 
     def on_promo_preview_position(self, position: int) -> None:
         if self.promo_preview_end_ms and position >= self.promo_preview_end_ms:
@@ -1770,11 +1791,13 @@ class MainWindow(QMainWindow):
         if state == QMediaPlayer.PlaybackState.StoppedState and self.promo_preview_button:
             self.promo_preview_button.setText("▶ Listen")
             self.promo_preview_button = None
+            self.promo_preview_start_ms = None
             self.promo_preview_end_ms = 0
 
     def stop_promo_preview(self) -> None:
         button = self.promo_preview_button
         self.promo_preview_button = None
+        self.promo_preview_start_ms = None
         self.promo_preview_end_ms = 0
         self.promo_preview_player.stop()
         if button:
