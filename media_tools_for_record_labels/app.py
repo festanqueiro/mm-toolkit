@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QStyle,
     QTabWidget,
     QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -51,6 +52,7 @@ from .core import (
     VIDEO_OUTPUT_FORMATS,
     convert_media,
     cut_video_clips,
+    detect_drop_starts,
     find_audio_files,
     format_timestamp,
     generate_videos,
@@ -127,7 +129,7 @@ class RenderWorker(QThread):
     failed = Signal(str, str)
     cancelled = Signal()
 
-    def __init__(self, tracks: list[Path], cover: Path, output: Path, settings: RenderSettings, naming: str, conflict: str):
+    def __init__(self, tracks: list[Path], cover: Path, output: Path, settings: RenderSettings, naming: str, conflict: str, track_options: dict[Path, tuple[float, float]]):
         super().__init__()
         self.tracks = tracks
         self.cover = cover
@@ -135,6 +137,7 @@ class RenderWorker(QThread):
         self.settings = settings
         self.naming = naming
         self.conflict = conflict
+        self.track_options = track_options
 
     def run(self) -> None:
         try:
@@ -147,6 +150,7 @@ class RenderWorker(QThread):
                 self.naming,
                 self.conflict,
                 self.isInterruptionRequested,
+                self.track_options,
             )
             self.succeeded.emit([os.fspath(path) for path in results])
         except CancelledError:
@@ -155,6 +159,31 @@ class RenderWorker(QThread):
             details = traceback.format_exc()
             print(details, file=sys.stderr)
             self.failed.emit(str(exc), details)
+
+
+class DropDetectionWorker(QThread):
+    progress = Signal(int, str)
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, sources: list[Path], seconds_before: float):
+        super().__init__()
+        self.sources = sources
+        self.seconds_before = seconds_before
+
+    def run(self) -> None:
+        try:
+            starts = detect_drop_starts(
+                self.sources,
+                self.seconds_before,
+                lambda percent, status: self.progress.emit(percent, status),
+                self.isInterruptionRequested,
+            )
+            self.succeeded.emit({os.fspath(path): start for path, start in starts.items()})
+        except CancelledError:
+            pass
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
 
 class ClipWorker(QThread):
@@ -1107,6 +1136,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.worker: RenderWorker | None = None
+        self.analysis_worker: DropDetectionWorker | None = None
+        self.pending_drop_detection = False
         self.settings = QSettings("Media Tools for Record Labels", "Media Tools for Record Labels")
         self.setWindowTitle("Media Tools for Record Labels")
         self.setMinimumSize(820, 620)
@@ -1145,12 +1176,24 @@ class MainWindow(QMainWindow):
         self.preview_audio.clicked.connect(self.play_first_track)
         self.bass_effect = QCheckBox("Bass-reactive zoom blur")
         self.bass_effect.setChecked(True)
+        self.detect_drop = QCheckBox("Detect drop automatically")
+        self.detect_drop.setChecked(True)
         self.pre_drop = QDoubleSpinBox()
         self.pre_drop.setRange(0.0, 60.0)
         self.pre_drop.setDecimals(1)
         self.pre_drop.setSingleStep(0.5)
         self.pre_drop.setSuffix(" seconds")
         self.pre_drop.setValue(2.0)
+        self.detect_drop.toggled.connect(self.on_detect_drop_changed)
+        self.pre_drop.editingFinished.connect(self.start_drop_detection)
+        self.promo_tracks = QTableWidget(0, 3)
+        self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration"])
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.promo_tracks.setMinimumHeight(120)
+        self.analysis_status = QLabel("")
+        self.analysis_status.setWordWrap(True)
         self.profile = QComboBox()
         for label, value in (
             ("Artwork native", None),
@@ -1163,7 +1206,6 @@ class MainWindow(QMainWindow):
         self.duration.setRange(1, 600)
         self.duration.setValue(60)
         self.duration.setSuffix(" seconds")
-        self.duration.valueChanged.connect(self.validate)
         self.fps = QSpinBox()
         self.fps.setRange(12, 60)
         self.fps.setValue(24)
@@ -1197,14 +1239,21 @@ class MainWindow(QMainWindow):
         effects_form = QFormLayout()
         effects_form.setSpacing(12)
         effects_form.addRow("Visual effect", self.bass_effect)
-        effects_form.addRow("Before detected drop", self.pre_drop)
+
+        promo_clips_layout = QVBoxLayout()
+        detection_form = QFormLayout()
+        detection_form.setSpacing(8)
+        detection_form.addRow("Automatic start", self.detect_drop)
+        detection_form.addRow("Seconds before drop", self.pre_drop)
+        promo_clips_layout.addLayout(detection_form)
+        promo_clips_layout.addWidget(self.analysis_status)
+        promo_clips_layout.addWidget(self.promo_tracks, 1)
 
         output_form = QFormLayout()
         output_form.setSpacing(12)
         output_form.addRow("Export folder", self.output)
         output_form.addRow("", self.output_status)
         output_form.addRow("Video profile", self.profile)
-        output_form.addRow("Duration", self.duration)
         output_form.addRow("Frame rate", self.fps)
         output_form.addRow("Quality (CRF)", self.crf)
         output_form.addRow("Encoding speed", self.encoding_speed)
@@ -1241,6 +1290,7 @@ class MainWindow(QMainWindow):
         feature_columns.setSpacing(14)
         input_column = QVBoxLayout()
         input_column.addWidget(section_group("Input", input_form))
+        input_column.addWidget(section_group("Promo clips", promo_clips_layout), 1)
         input_column.addStretch()
         settings_column = QVBoxLayout()
         settings_column.addWidget(section_group("Post-Effects", effects_form))
@@ -1274,7 +1324,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.about, standard_icon(QStyle.StandardPixmap.SP_MessageBoxInformation), "About")
         self.setCentralWidget(self.tabs)
 
-        self.music.changed.connect(self.validate)
+        self.music.changed.connect(self.on_music_changed)
         self.cover.changed.connect(self.validate)
         self.output.changed.connect(self.validate)
         self.app_settings.changed.connect(self.apply_app_settings)
@@ -1283,6 +1333,7 @@ class MainWindow(QMainWindow):
         self.history.load_requested.connect(self.load_history_job)
         self.restore_paths()
         self.apply_app_settings()
+        self.refresh_promo_tracks()
         self.validate()
 
     def restore_paths(self) -> None:
@@ -1291,6 +1342,7 @@ class MainWindow(QMainWindow):
             if value and Path(value).exists():
                 row.edit.setText(value)
         self.bass_effect.setChecked(self.settings.value("promo/bass_effect", True, type=bool))
+        self.detect_drop.setChecked(self.settings.value("promo/detect_drop", True, type=bool))
         self.pre_drop.setValue(self.settings.value("promo/pre_drop", 2.0, type=float))
 
     def apply_app_settings(self) -> None:
@@ -1314,12 +1366,25 @@ class MainWindow(QMainWindow):
 
     def load_history_job(self, record: dict) -> None:
         if record.get("tool") == "promo":
+            self.detect_drop.blockSignals(True)
+            self.detect_drop.setChecked(False)
+            self.detect_drop.blockSignals(False)
             self.music.set_path(record.get("source", ""))
             self.cover.set_path(record.get("cover", ""))
             self.output.set_path(record.get("output", ""))
             self.bass_effect.setChecked(record.get("bass_effect", True))
+            self.detect_drop.blockSignals(True)
+            self.detect_drop.setChecked(record.get("detect_drop", True))
+            self.detect_drop.blockSignals(False)
             self.pre_drop.setValue(record.get("pre_drop", 2.0))
-            self.duration.setValue(record.get("duration", 60.0))
+            stored_tracks = {item.get("path"): item for item in record.get("tracks", [])}
+            for row in range(self.promo_tracks.rowCount()):
+                path = self.promo_tracks.item(row, 0).data(Qt.ItemDataRole.UserRole)
+                if path in stored_tracks:
+                    self.promo_tracks.cellWidget(row, 1).setText(format_timestamp(stored_tracks[path].get("start", 0)))
+                    self.promo_tracks.cellWidget(row, 2).setValue(stored_tracks[path].get("duration", 60))
+            self.pre_drop.setEnabled(self.detect_drop.isChecked())
+            self.analysis_status.setText("✓ Loaded saved per-track timings.")
             self.fps.setValue(record.get("fps", 24))
             profile = record.get("profile")
             self.profile.setCurrentIndex(max(0, self.profile.findData(tuple(profile) if profile else None)))
@@ -1349,6 +1414,109 @@ class MainWindow(QMainWindow):
                 self.converter.mp3_bitrate.setCurrentIndex(bitrate_index)
             self.tabs.setCurrentIndex(2)
 
+    def on_music_changed(self, _path: str = "") -> None:
+        self.refresh_promo_tracks()
+        self.validate()
+
+    def refresh_promo_tracks(self) -> None:
+        previous: dict[str, tuple[str, float]] = {}
+        for row in range(self.promo_tracks.rowCount()):
+            item = self.promo_tracks.item(row, 0)
+            if item:
+                previous[item.data(Qt.ItemDataRole.UserRole)] = (
+                    self.promo_tracks.cellWidget(row, 1).text(),
+                    self.promo_tracks.cellWidget(row, 2).value(),
+                )
+        tracks = find_audio_files(self.music.path)
+        self.promo_tracks.setRowCount(0)
+        for row, track in enumerate(tracks):
+            self.promo_tracks.insertRow(row)
+            item = QTableWidgetItem(track.name)
+            item.setToolTip(os.fspath(track))
+            item.setData(Qt.ItemDataRole.UserRole, os.fspath(track))
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.promo_tracks.setItem(row, 0, item)
+            old_start, old_duration = previous.get(os.fspath(track), ("00:00:00", self.duration.value()))
+            start = QLineEdit(old_start)
+            start.setPlaceholderText("HH:MM:SS")
+            start.textChanged.connect(self.validate)
+            duration = QDoubleSpinBox()
+            duration.setRange(1, 3600)
+            duration.setDecimals(1)
+            duration.setSuffix(" s")
+            duration.setValue(old_duration)
+            duration.valueChanged.connect(self.validate)
+            self.promo_tracks.setCellWidget(row, 1, start)
+            self.promo_tracks.setCellWidget(row, 2, duration)
+        if tracks and self.detect_drop.isChecked():
+            self.start_drop_detection()
+        elif tracks:
+            self.analysis_status.setText("Manual start times — edit each row as needed.")
+        else:
+            self.analysis_status.clear()
+
+    def promo_track_options(self) -> tuple[dict[Path, tuple[float, float]], str]:
+        options: dict[Path, tuple[float, float]] = {}
+        for row in range(self.promo_tracks.rowCount()):
+            item = self.promo_tracks.item(row, 0)
+            try:
+                start = parse_timestamp(self.promo_tracks.cellWidget(row, 1).text())
+            except ValueError as exc:
+                return {}, f"Track {row + 1}: {exc}"
+            duration = self.promo_tracks.cellWidget(row, 2).value()
+            options[Path(item.data(Qt.ItemDataRole.UserRole))] = (start, duration)
+        return options, f"✓ {len(options)} promo clip{'s' if len(options) != 1 else ''} ready."
+
+    def on_detect_drop_changed(self, checked: bool) -> None:
+        self.pre_drop.setEnabled(checked and self.worker is None)
+        if checked:
+            self.start_drop_detection()
+        else:
+            self.pending_drop_detection = False
+            if self.analysis_worker and self.analysis_worker.isRunning():
+                self.analysis_worker.requestInterruption()
+            for row in range(self.promo_tracks.rowCount()):
+                self.promo_tracks.cellWidget(row, 1).setText("00:00:00")
+            self.analysis_status.setText("Manual start times — edit each row as needed.")
+            self.validate()
+
+    def start_drop_detection(self) -> None:
+        tracks = find_audio_files(self.music.path)
+        if not self.detect_drop.isChecked() or not tracks:
+            return
+        if self.analysis_worker and self.analysis_worker.isRunning():
+            self.pending_drop_detection = True
+            self.analysis_worker.requestInterruption()
+            return
+        self.pending_drop_detection = False
+        self.analysis_worker = DropDetectionWorker(tracks, self.pre_drop.value())
+        self.analysis_worker.progress.connect(lambda _percent, status: self.analysis_status.setText(status + "…"))
+        self.analysis_worker.succeeded.connect(self.on_drop_detection_success)
+        self.analysis_worker.failed.connect(lambda message: self.analysis_status.setText(f"Automatic detection failed: {message}. Edit starts manually."))
+        self.analysis_worker.finished.connect(self.on_drop_detection_finished)
+        self.analysis_status.setText("Preparing drop detection…")
+        self.validate()
+        self.analysis_worker.start()
+
+    def on_drop_detection_success(self, starts: dict[str, float]) -> None:
+        if not self.detect_drop.isChecked():
+            return
+        for row in range(self.promo_tracks.rowCount()):
+            path = self.promo_tracks.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            if path in starts:
+                self.promo_tracks.cellWidget(row, 1).setText(format_timestamp(starts[path]))
+        self.analysis_status.setText(f"✓ Automatically set {len(starts)} start time{'s' if len(starts) != 1 else ''}.")
+
+    def on_drop_detection_finished(self) -> None:
+        worker = self.analysis_worker
+        self.analysis_worker = None
+        if worker:
+            worker.deleteLater()
+        if self.pending_drop_detection:
+            self.start_drop_detection()
+        else:
+            self.validate()
+
     def validate(self) -> bool:
         tracks = find_audio_files(self.music.path)
         music_ok = bool(tracks)
@@ -1363,7 +1531,9 @@ class MainWindow(QMainWindow):
         output_path = Path(self.output.path).expanduser() if self.output.path else None
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
         self.output_status.setText("✓ Export folder is writable." if output_ok else "Choose a writable export folder.")
-        ready = music_ok and cover_ok and output_ok and self.worker is None
+        track_options, track_message = self.promo_track_options()
+        analysing = bool(self.analysis_worker and self.analysis_worker.isRunning())
+        ready = music_ok and cover_ok and output_ok and bool(track_options) and not analysing and self.worker is None
         missing = []
         if not music_ok:
             missing.append("choose supported audio")
@@ -1371,6 +1541,10 @@ class MainWindow(QMainWindow):
             missing.append("choose valid artwork")
         if not output_ok:
             missing.append("choose a writable export folder")
+        if music_ok and not track_options:
+            missing.append(track_message.rstrip("."))
+        if analysing:
+            missing.append("wait for automatic drop detection")
         if self.worker is not None:
             action_message = "Generating promo videos…"
         elif missing:
@@ -1379,10 +1553,10 @@ class MainWindow(QMainWindow):
             action_message = "✓ Ready to generate promo videos."
         self.generate_requirements.setText(action_message)
         self.generate.setToolTip(action_message)
-        if tracks:
-            total_seconds = len(tracks) * self.duration.value()
+        if track_options:
+            total_seconds = sum(duration for _start, duration in track_options.values())
             free_gb = shutil.disk_usage(output_path).free / 1024**3 if output_ok else 0
-            self.job_summary.setText(f"{len(tracks)} output(s), {total_seconds / 60:.1f} min total • {free_gb:.1f} GB free")
+            self.job_summary.setText(f"{len(track_options)} output(s), {total_seconds / 60:.1f} min total • {free_gb:.1f} GB free")
         else:
             self.job_summary.setText("Select audio to estimate this job.")
         self.preview_audio.setEnabled(music_ok and self.worker is None)
@@ -1414,10 +1588,11 @@ class MainWindow(QMainWindow):
         for row in (self.music, self.cover, self.output):
             row.set_enabled(enabled)
         self.bass_effect.setEnabled(enabled)
-        self.pre_drop.setEnabled(enabled)
+        self.detect_drop.setEnabled(enabled)
+        self.pre_drop.setEnabled(enabled and self.detect_drop.isChecked())
+        self.promo_tracks.setEnabled(enabled)
         for control in (
             self.profile,
-            self.duration,
             self.fps,
             self.crf,
             self.encoding_speed,
@@ -1439,6 +1614,7 @@ class MainWindow(QMainWindow):
         self.cover.set_path("")
         self.output.set_path(self.settings.value("general/default_output", ""))
         self.bass_effect.setChecked(True)
+        self.detect_drop.setChecked(True)
         self.pre_drop.setValue(2.0)
         self.profile.setCurrentIndex(0)
         self.duration.setValue(60)
@@ -1450,7 +1626,7 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.progress_status.clear()
         self.progress_status.hide()
-        for key in ("music", "cover", "output", "promo/bass_effect", "promo/pre_drop"):
+        for key in ("music", "cover", "output", "promo/bass_effect", "promo/detect_drop", "promo/pre_drop"):
             self.settings.remove(key)
         self.validate()
 
@@ -1458,6 +1634,7 @@ class MainWindow(QMainWindow):
         if not self.validate():
             return
         tracks = find_audio_files(self.music.path)
+        track_options, _ = self.promo_track_options()
         for key, value in (("music", self.music.path), ("cover", self.cover.path), ("output", self.output.path)):
             self.settings.setValue(key, value)
         render_settings = RenderSettings(
@@ -1471,6 +1648,7 @@ class MainWindow(QMainWindow):
             audio_bitrate=self.audio_bitrate.currentData(),
         )
         self.settings.setValue("promo/bass_effect", self.bass_effect.isChecked())
+        self.settings.setValue("promo/detect_drop", self.detect_drop.isChecked())
         self.settings.setValue("promo/pre_drop", self.pre_drop.value())
         self.worker = RenderWorker(
             tracks,
@@ -1479,6 +1657,7 @@ class MainWindow(QMainWindow):
             render_settings,
             self.settings.value("general/promo_naming", "{track} - Promo Snippet"),
             self.settings.value("general/conflict_policy", "rename"),
+            track_options,
         )
         self.worker.progress.connect(self.on_progress)
         self.worker.succeeded.connect(self.on_success)
@@ -1501,6 +1680,7 @@ class MainWindow(QMainWindow):
 
     def on_success(self, outputs: list[str]) -> None:
         profile = self.profile.currentData()
+        track_options, _ = self.promo_track_options()
         self.add_history({
             "tool": "promo",
             "created": datetime.now().isoformat(timespec="seconds"),
@@ -1508,8 +1688,12 @@ class MainWindow(QMainWindow):
             "cover": self.cover.path,
             "output": self.output.path,
             "bass_effect": self.bass_effect.isChecked(),
+            "detect_drop": self.detect_drop.isChecked(),
             "pre_drop": self.pre_drop.value(),
-            "duration": self.duration.value(),
+            "tracks": [
+                {"path": os.fspath(path), "start": start, "duration": duration}
+                for path, (start, duration) in track_options.items()
+            ],
             "fps": self.fps.value(),
             "profile": list(profile) if profile else None,
             "outputs": outputs,
@@ -1534,9 +1718,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):  # noqa: N802, ANN001
         promo_running = self.worker and self.worker.isRunning()
+        analysis_running = self.analysis_worker and self.analysis_worker.isRunning()
         clips_running = self.clips.worker and self.clips.worker.isRunning()
         converter_running = self.converter.worker and self.converter.worker.isRunning()
-        if promo_running or clips_running or converter_running:
+        if promo_running or analysis_running or clips_running or converter_running:
             QMessageBox.warning(self, "Rendering in progress", "Wait for rendering to finish before closing the app.")
             event.ignore()
             return

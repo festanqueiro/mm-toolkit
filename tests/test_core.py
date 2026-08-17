@@ -12,6 +12,7 @@ from media_tools_for_record_labels.core import (
     convert_media,
     find_audio_files,
     format_timestamp,
+    generate_videos,
     media_kind,
     parse_timestamp,
     resolve_output,
@@ -119,3 +120,24 @@ def test_converter_rejects_unknown_audio_bitrate(tmp_path: Path) -> None:
     source.touch()
     with pytest.raises(ValueError, match="Audio bitrate"):
         convert_media([source], tmp_path, "mp3", audio_bitrate="999k")
+
+
+def test_promo_track_options_override_start_and_duration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "track.wav"
+    source.touch()
+    captured = {}
+
+    def fake_render(source_path, _cover, _output, settings, _ffmpeg, _progress, _cancel, start_time):
+        captured["source"] = source_path
+        captured["start"] = start_time
+        captured["duration"] = settings.duration
+
+    monkeypatch.setattr("media_tools_for_record_labels.core.require_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr("media_tools_for_record_labels.core.render_track", fake_render)
+    generate_videos(
+        [source],
+        tmp_path / "cover.png",
+        tmp_path / "exports",
+        track_options={source: (12.5, 34.0)},
+    )
+    assert captured == {"source": source, "start": 12.5, "duration": 34.0}

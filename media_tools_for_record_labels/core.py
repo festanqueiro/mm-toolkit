@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -203,6 +203,31 @@ def detect_drop_time(wav_path: Path) -> float:
     return best_index * DROP_SEARCH_BIN_S
 
 
+def detect_drop_starts(
+    sources: Iterable[Path],
+    seconds_before: float = 2.0,
+    callback: ProgressCallback | None = None,
+    should_cancel: CancelCheck = lambda: False,
+) -> dict[Path, float]:
+    """Detect a suggested promo start for each source without blocking the UI."""
+    files = list(sources)
+    ffmpeg = require_ffmpeg()
+    starts: dict[Path, float] = {}
+    with tempfile.TemporaryDirectory(prefix="promo-drop-analysis-") as scratch:
+        scratch_path = Path(scratch)
+        for index, source in enumerate(files):
+            if should_cancel():
+                raise CancelledError("Drop analysis cancelled.")
+            if callback:
+                callback(round(index / max(1, len(files)) * 100), f"Detecting drop in {source.name}")
+            normalised = scratch_path / f"source-{index}.wav"
+            _normalise_audio(source, normalised, ffmpeg)
+            starts[source] = max(0.0, detect_drop_time(normalised) - seconds_before)
+    if callback:
+        callback(100, "Drop detection finished")
+    return starts
+
+
 def _build_bass_envelope(wav_path: Path, fps: int, duration: float) -> np.ndarray:
     samples, sample_rate = _read_mono(wav_path)
     cutoff = min(BASS_CUTOFF_HZ / (sample_rate / 2), 0.99)
@@ -295,6 +320,7 @@ def render_track(
     ffmpeg: str,
     progress: Callable[[float], None],
     should_cancel: CancelCheck = lambda: False,
+    start_time: float | None = None,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="promo-video-") as scratch:
         scratch_path = Path(scratch)
@@ -305,8 +331,10 @@ def render_track(
         _normalise_audio(source, normalised, ffmpeg)
         if should_cancel():
             raise CancelledError("Generation cancelled.")
-        drop_time = detect_drop_time(normalised)
-        _extract_audio(normalised, max(0.0, drop_time - settings.pre_drop), settings.duration, trimmed, ffmpeg)
+        if start_time is None:
+            drop_time = detect_drop_time(normalised)
+            start_time = max(0.0, drop_time - settings.pre_drop)
+        _extract_audio(normalised, max(0.0, start_time), settings.duration, trimmed, ffmpeg)
         actual_duration = min(settings.duration, sf.info(trimmed).duration)
         if actual_duration <= 0:
             raise RuntimeError(f"{source.name} contains no usable audio.")
@@ -364,6 +392,7 @@ def generate_videos(
     naming_template: str = "{track} - Promo Snippet",
     conflict_policy: str = "rename",
     should_cancel: CancelCheck = lambda: False,
+    track_options: dict[Path, tuple[float | None, float]] | None = None,
 ) -> list[Path]:
     files = list(audio_files)
     if not files:
@@ -389,7 +418,9 @@ def generate_videos(
                 callback(overall, f"Rendering {name}")
 
         try:
-            render_track(source, cover_path, output, settings, ffmpeg, track_progress, should_cancel)
+            start_time, duration = (track_options or {}).get(source, (None, settings.duration))
+            track_settings = replace(settings, duration=duration)
+            render_track(source, cover_path, output, track_settings, ffmpeg, track_progress, should_cancel, start_time)
         except Exception:
             output.unlink(missing_ok=True)
             raise

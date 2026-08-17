@@ -15,11 +15,12 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 - Remember the last selected paths.
 - Detect the main bass-energy drop and animate the original punchy zoom-blur effect.
 - Turn the bass-reactive zoom blur on or off; when off, the artwork remains static.
-- Configure how many seconds before the detected drop the snippet begins (default: 2 seconds).
+- Add one promo row per detected audio file and edit each track's start time and duration independently.
+- Enable automatic drop detection to populate every start time using a configurable lead-in (default: 2 seconds), or disable it for manual starts.
 - See an inline thumbnail of the selected artwork and play the first detected track in the system audio player.
 - Clear the complete form and saved selections to start fresh.
 - Choose artwork-native, vertical, square, or landscape output profiles.
-- Configure duration, frame rate, CRF quality, encoding speed, and audio bitrate.
+- Configure per-track duration plus shared frame rate, CRF quality, encoding speed, and audio bitrate.
 - Cancel active rendering safely; partial outputs are removed.
 - Review job size/duration estimates before starting.
 
