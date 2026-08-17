@@ -54,7 +54,7 @@ Available for macOS and Windows.
 - Give every clip a descriptive title and cancel active clip creation safely.
 - Preview video in the app, scrub the timeline, and set clip start/end from the current playhead.
 
-## Converter tab
+## Media Converter tab
 
 - Select one or many audio files and convert them to MP3, WAV, AIFF, FLAC, M4A, AAC, or OGG.
 - Choose 128, 192, 256, or 320 kbps when MP3 is the selected output format.

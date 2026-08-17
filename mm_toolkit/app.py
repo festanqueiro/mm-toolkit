@@ -846,7 +846,7 @@ class ConverterTab(QWidget):
         super().__init__()
         self.settings = settings
         self.worker: ConverterWorker | None = None
-        title = page_title("Converter")
+        title = page_title("Media Converter")
         subtitle = QLabel("Convert batches of audio or video files into another common format.")
         self.files = QListWidget()
         self.files.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -867,7 +867,7 @@ class ConverterTab(QWidget):
         self.mp3_bitrate.setCurrentIndex(self.mp3_bitrate.findData("320k"))
         self.mp3_bitrate.currentIndexChanged.connect(self.validate)
         self.mp3_bitrate_label = QLabel("MP3 bitrate")
-        self.output = PathRow("Choose converter export folder", "directory")
+        self.output = PathRow("Choose media converter export folder", "directory")
         self.output.changed.connect(self.validate)
         self.output_status = QLabel("")
         self.output_status.setWordWrap(True)
@@ -912,7 +912,8 @@ class ConverterTab(QWidget):
         columns.setSpacing(14)
         columns.addWidget(section_group("Input", input_layout), 1)
         output_column = QVBoxLayout()
-        output_column.addWidget(section_group("Output", output_form))
+        self.converter_output_group = section_group("Output", output_form)
+        output_column.addWidget(self.converter_output_group)
         output_column.addStretch()
         columns.addLayout(output_column, 1)
         layout.addLayout(columns, 1)
@@ -981,6 +982,7 @@ class ConverterTab(QWidget):
         sources = self.source_paths()
         kinds = {media_kind(path) for path in sources if path.is_file()}
         kind = next(iter(kinds)) if len(kinds) == 1 and None not in kinds and len(sources) == sum(path.is_file() for path in sources) else None
+        self.converter_output_group.setEnabled(kind is not None and self.worker is None)
         mixed = len(kinds) > 1 or None in kinds
         current_kind = self.output_format.property("media_kind")
         if current_kind != kind:
@@ -1027,6 +1029,7 @@ class ConverterTab(QWidget):
     def set_inputs_enabled(self, enabled: bool) -> None:
         self.choose_button.setEnabled(enabled)
         self.files.setEnabled(enabled)
+        self.converter_output_group.setEnabled(enabled and self.output_format.count() > 0)
         self.output_format.setEnabled(enabled)
         self.mp3_bitrate.setEnabled(enabled)
         self.output.set_enabled(enabled)
@@ -1331,7 +1334,7 @@ class HistoryTab(QWidget):
             tool = {
                 "promo": "Video Generator",
                 "clips": "Livestream Clips",
-                "converter": "Converter",
+                "converter": "Media Converter",
             }.get(record.get("tool"), "Media Tool")
             source = Path(record.get("source", "")).name or "Unknown input"
             self.jobs.addItem(f"{record.get('created', '')}  •  {tool}  •  {source}")
@@ -1552,7 +1555,7 @@ class MainWindow(QMainWindow):
         icon_color = self.palette().color(QPalette.ColorRole.WindowText).name()
         self.tabs.addTab(container, material_icon("music_video", icon_color), "Video Generator")
         self.tabs.addTab(self.clips, material_icon("content_cut", icon_color), "Livestream Clips")
-        self.tabs.addTab(self.converter, material_icon("swap_horiz", icon_color), "Converter")
+        self.tabs.addTab(self.converter, material_icon("swap_horiz", icon_color), "Media Converter")
         self.tabs.addTab(self.history, material_icon("history", icon_color), "History")
         self.tabs.addTab(self.app_settings, material_icon("settings", icon_color), "Settings")
         self.tabs.addTab(self.about, material_icon("info", icon_color), "About")
