@@ -43,7 +43,6 @@ from PySide6.QtWidgets import (
     QSlider,
     QSizePolicy,
     QSpinBox,
-    QStyle,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -85,6 +84,11 @@ TIMESTAMP_BUTTON_STYLE = (
     "border-radius: 6px; padding: 0 12px; color: palette(button-text); }"
     "QPushButton:hover, QToolButton:hover { background-color: palette(midlight); }"
     "QPushButton:pressed, QToolButton:pressed { background-color: palette(mid); }"
+)
+ICON_BUTTON_STYLE = (
+    "QToolButton { background: transparent; border: 0; border-radius: 6px; padding: 6px; }"
+    "QToolButton:hover { background: palette(midlight); }"
+    "QToolButton:pressed { background: palette(mid); }"
 )
 
 
@@ -637,21 +641,23 @@ class ClipsTab(QWidget):
             edit.focused.connect(lambda row=row, column=column: self.table.setCurrentCell(row, column))
             self.table.setCellWidget(row, column, edit)
         preview = QToolButton()
-        preview.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        preview.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
         preview.setToolTip("Play this clip")
         preview.setAccessibleName(f"Play clip {row + 1}")
         preview.setAutoRaise(True)
         preview.setFixedSize(36, 36)
+        preview.setStyleSheet(ICON_BUTTON_STYLE)
         preview.clicked.connect(
             lambda _checked=False, button=preview: self.toggle_clip_preview_button(button)
         )
         self.table.setCellWidget(row, 4, preview)
         remove = QToolButton()
-        remove.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
+        remove.setIcon(material_icon("delete", self.palette().color(QPalette.ColorRole.Text).name()))
         remove.setToolTip("Remove this clip")
         remove.setAccessibleName(f"Remove clip {row + 1}")
         remove.setAutoRaise(True)
         remove.setFixedSize(36, 36)
+        remove.setStyleSheet(ICON_BUTTON_STYLE)
         remove.clicked.connect(lambda _checked=False, button=remove: self.remove_row(button))
         self.table.setCellWidget(row, 5, remove)
         self.table.setCurrentCell(row, 0)
@@ -738,7 +744,7 @@ class ClipsTab(QWidget):
         self.clip_preview_button = button
         self.clip_preview_start_ms = round(clip.start * 1000)
         self.clip_preview_end_ms = round((clip.start + clip.duration) * 1000)
-        button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+        button.setIcon(material_icon("stop", self.palette().color(QPalette.ColorRole.Text).name()))
         button.setToolTip("Stop this clip")
         if self.player.mediaStatus() in (
             QMediaPlayer.MediaStatus.LoadedMedia,
@@ -770,7 +776,7 @@ class ClipsTab(QWidget):
         self.clip_preview_start_ms = None
         self.clip_preview_end_ms = 0
         if button:
-            button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+            button.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
             button.setToolTip("Play this clip")
 
     def load_media_preview(self, path: str) -> None:
@@ -1806,9 +1812,10 @@ class MainWindow(QMainWindow):
             duration.setValue(old_duration)
             duration.valueChanged.connect(self.validate)
             preview = QToolButton()
-            preview.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+            preview.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
             preview.setAutoRaise(True)
             preview.setFixedSize(36, 36)
+            preview.setStyleSheet(ICON_BUTTON_STYLE)
             preview.setAccessibleName(f"Play preview for {track.name}")
             preview.clicked.connect(
                 lambda _checked=False, row=row, button=preview: self.toggle_promo_preview(row, button)
@@ -1839,7 +1846,7 @@ class MainWindow(QMainWindow):
             return
         if not isinstance(preview, QToolButton):
             return
-        preview.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        preview.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
         preview.setToolTip(
             f"Listen from {start.text() or 'the start time'} for {duration.value():g} seconds"
         )
@@ -1876,7 +1883,7 @@ class MainWindow(QMainWindow):
             QMediaPlayer.MediaStatus.BufferedMedia,
         ):
             self.start_promo_preview_playback()
-        button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+        button.setIcon(material_icon("stop", self.palette().color(QPalette.ColorRole.Text).name()))
         self.analysis_status.setText(
             f"Listening to {source.name} from {format_timestamp(start_seconds)} for {duration_seconds:g} seconds."
         )
@@ -1903,7 +1910,7 @@ class MainWindow(QMainWindow):
     def on_promo_preview_state(self, state) -> None:  # noqa: ANN001
         if state == QMediaPlayer.PlaybackState.StoppedState and self.promo_preview_button:
             self.promo_preview_button.setIcon(
-                self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+                material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name())
             )
             self.promo_preview_button = None
             self.promo_preview_start_ms = None
@@ -1916,7 +1923,7 @@ class MainWindow(QMainWindow):
         self.promo_preview_end_ms = 0
         self.promo_preview_player.stop()
         if button:
-            button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+            button.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
 
     def promo_track_options(self) -> tuple[dict[Path, tuple[float, float]], str]:
         options: dict[Path, tuple[float, float]] = {}
