@@ -355,10 +355,21 @@ class DropStartField(QWidget):
         super().__init__()
         self.edit = QLineEdit(value)
         self.edit.setFixedSize(150, 38)
+        self.edit.setStyleSheet(
+            "QLineEdit { background-color: palette(base); border: 1px solid palette(mid); "
+            "border-radius: 6px; padding: 5px 9px; color: palette(text); }"
+            "QLineEdit:focus { border-color: palette(highlight); }"
+        )
         self.edit.setPlaceholderText("HH:MM:SS")
         self.edit.textChanged.connect(self.textChanged)
         self.detect_button = QPushButton("✨")
         self.detect_button.setFixedSize(38, 38)
+        self.detect_button.setStyleSheet(
+            "QPushButton { background-color: palette(button); border: 1px solid palette(mid); "
+            "border-radius: 6px; padding: 0; color: palette(button-text); }"
+            "QPushButton:hover { background-color: palette(midlight); }"
+            "QPushButton:pressed { background-color: palette(mid); }"
+        )
         self.detect_button.setToolTip("Analyze this track and propose a drop start time")
         self.detect_button.setAccessibleName("Detect drop for this track")
         self.detect_button.clicked.connect(self.detect_requested)
@@ -1644,6 +1655,11 @@ class MainWindow(QMainWindow):
             start.detect_requested.connect(lambda row=row: self.start_drop_detection(row))
             duration = QDoubleSpinBox()
             duration.setFixedSize(150, 38)
+            duration.setStyleSheet(
+                "QDoubleSpinBox { background-color: palette(base); border: 1px solid palette(mid); "
+                "border-radius: 6px; padding: 5px 9px; color: palette(text); }"
+                "QDoubleSpinBox:focus { border-color: palette(highlight); }"
+            )
             duration.setRange(1, 3600)
             duration.setDecimals(1)
             duration.setSuffix(" s")
@@ -1651,6 +1667,12 @@ class MainWindow(QMainWindow):
             duration.valueChanged.connect(self.validate)
             preview = QPushButton("▶ Listen")
             preview.setFixedSize(150, 38)
+            preview.setStyleSheet(
+                "QPushButton { background-color: palette(button); border: 1px solid palette(mid); "
+                "border-radius: 6px; padding: 0 12px; color: palette(button-text); }"
+                "QPushButton:hover { background-color: palette(midlight); }"
+                "QPushButton:pressed { background-color: palette(mid); }"
+            )
             preview.clicked.connect(
                 lambda _checked=False, row=row, button=preview: self.toggle_promo_preview(row, button)
             )
