@@ -1246,13 +1246,10 @@ class MainWindow(QMainWindow):
         self.music_status.setWordWrap(True)
         self.cover_status.setWordWrap(True)
         self.output_status.setWordWrap(True)
-        self.artwork_preview = QLabel("Visual preview")
+        self.artwork_preview = QLabel()
         self.artwork_preview.setFixedSize(104, 104)
         self.artwork_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.artwork_preview.setWordWrap(True)
-        self.artwork_preview.setStyleSheet(
-            "QLabel { border: 1px solid palette(mid); border-radius: 8px; padding: 4px; }"
-        )
+        self.artwork_preview.hide()
         self.bass_effect = QCheckBox("Bass-reactive zoom blur")
         self.bass_effect.setChecked(True)
         self.video_fade = QCheckBox("Fade video in/out")
@@ -1765,22 +1762,26 @@ class MainWindow(QMainWindow):
 
     def update_artwork_preview(self, cover_ok: bool) -> None:
         if not cover_ok:
-            self.artwork_preview.setPixmap(QPixmap())
-            self.artwork_preview.setText("Visual preview")
+            self.artwork_preview.clear()
+            self.artwork_preview.hide()
             return
         if Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}:
             capture = cv2.VideoCapture(self.cover.path)
             readable, frame = capture.read()
             capture.release()
             if not readable:
-                self.artwork_preview.setText("Video preview unavailable")
+                self.artwork_preview.clear()
+                self.artwork_preview.hide()
                 return
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             height, width, channels = rgb.shape
             pixmap = QPixmap.fromImage(QImage(rgb.data, width, height, channels * width, QImage.Format.Format_RGB888).copy())
         else:
             pixmap = QPixmap(self.cover.path)
-        self.artwork_preview.setText("")
+        if pixmap.isNull():
+            self.artwork_preview.clear()
+            self.artwork_preview.hide()
+            return
         self.artwork_preview.setPixmap(
             pixmap.scaled(
                 94,
@@ -1789,6 +1790,7 @@ class MainWindow(QMainWindow):
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
+        self.artwork_preview.show()
 
     def set_inputs_enabled(self, enabled: bool) -> None:
         if not enabled:
