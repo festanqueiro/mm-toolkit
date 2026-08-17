@@ -10,6 +10,8 @@ from media_tools_for_record_labels.core import (
     find_audio_files,
     format_timestamp,
     parse_timestamp,
+    resolve_output,
+    safe_filename,
     validate_cover,
     validate_video,
 )
@@ -73,3 +75,19 @@ def test_media_validation(tmp_path: Path) -> None:
     assert validate_cover(cover)[0]
     assert validate_video(video)[0]
     assert not validate_video(tmp_path / "source.txt")[0]
+
+
+def test_safe_filename_and_conflict_policies(tmp_path: Path) -> None:
+    assert safe_filename('Artist: Track?/Name') == "Artist- Track--Name"
+    existing = tmp_path / "video.mp4"
+    existing.touch()
+    assert resolve_output(existing, "skip") is None
+    assert resolve_output(existing, "overwrite") == existing
+    assert resolve_output(existing, "rename") == tmp_path / "video (2).mp4"
+
+
+def test_artwork_output_profile_letterboxes_without_distortion(tmp_path: Path) -> None:
+    artwork_path = tmp_path / "wide.png"
+    Image.new("RGB", (400, 200), "magenta").save(artwork_path)
+    artwork = _load_artwork(artwork_path, None, (108, 192))
+    assert artwork.shape == (192, 108, 3)

@@ -18,7 +18,7 @@ import soundfile as sf
 from moviepy import AudioFileClip, VideoClip
 from moviepy.audio.fx import AudioFadeIn, AudioFadeOut
 from moviepy.video.fx import FadeIn, FadeOut
-from PIL import Image
+from PIL import Image, ImageOps
 from proglog import ProgressBarLogger
 from scipy.signal import butter, sosfiltfilt
 
@@ -36,6 +36,11 @@ DROP_SEARCH_SKIP_S = 20
 DROP_WINDOW_S = 8
 
 ProgressCallback = Callable[[int, str], None]
+CancelCheck = Callable[[], bool]
+
+
+class CancelledError(RuntimeError):
+    """Raised when the user cancels an active media job."""
 
 
 @dataclass(frozen=True)
@@ -46,12 +51,37 @@ class RenderSettings:
     pre_drop: float = 2.0
     fade: float = 0.5
     bass_effect: bool = True
+    output_size: tuple[int, int] | None = None
+    preset: str = "medium"
+    crf: int = 18
+    audio_bitrate: str = "256k"
 
 
 @dataclass(frozen=True)
 class ClipRequest:
     start: float
     duration: float
+    title: str = ""
+
+
+def safe_filename(value: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", value).strip(" .")
+    return cleaned or "Untitled"
+
+
+def resolve_output(path: Path, conflict_policy: str) -> Path | None:
+    if not path.exists() or conflict_policy == "overwrite":
+        return path
+    if conflict_policy == "skip":
+        return None
+    if conflict_policy != "rename":
+        raise ValueError(f"Unknown conflict policy: {conflict_policy}")
+    counter = 2
+    while True:
+        candidate = path.with_name(f"{path.stem} ({counter}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 def parse_timestamp(value: str) -> float:
@@ -196,11 +226,21 @@ def _radial_blur(image: np.ndarray, strength: float) -> np.ndarray:
     return (accumulator / BLUR_SAMPLES).astype(np.uint8)
 
 
-def _load_artwork(cover_path: Path, size: int | None) -> np.ndarray:
+def _load_artwork(
+    cover_path: Path,
+    size: int | None,
+    output_size: tuple[int, int] | None = None,
+) -> np.ndarray:
     with Image.open(cover_path) as image:
         artwork = image.convert("RGB")
         if size is not None:
             artwork = artwork.resize((size, size), Image.Resampling.LANCZOS)
+        elif output_size is not None:
+            width, height = output_size
+            fitted = ImageOps.contain(artwork, (width, height), Image.Resampling.LANCZOS)
+            canvas = Image.new("RGB", (width, height), (25, 25, 29))
+            canvas.paste(fitted, ((width - fitted.width) // 2, (height - fitted.height) // 2))
+            artwork = canvas
         elif artwork.width % 2 or artwork.height % 2:
             # H.264 yuv420p requires even dimensions. At most one edge pixel is removed.
             artwork = artwork.crop((0, 0, artwork.width - artwork.width % 2, artwork.height - artwork.height % 2))
@@ -242,12 +282,17 @@ def render_track(
     settings: RenderSettings,
     ffmpeg: str,
     progress: Callable[[float], None],
+    should_cancel: CancelCheck = lambda: False,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="promo-video-") as scratch:
         scratch_path = Path(scratch)
         normalised = scratch_path / "source.wav"
         trimmed = scratch_path / "snippet.wav"
+        if should_cancel():
+            raise CancelledError("Generation cancelled.")
         _normalise_audio(source, normalised, ffmpeg)
+        if should_cancel():
+            raise CancelledError("Generation cancelled.")
         drop_time = detect_drop_time(normalised)
         _extract_audio(normalised, max(0.0, drop_time - settings.pre_drop), settings.duration, trimmed, ffmpeg)
         actual_duration = min(settings.duration, sf.info(trimmed).duration)
@@ -258,9 +303,11 @@ def render_track(
             if settings.bass_effect
             else None
         )
-        background = _load_artwork(cover_path, settings.size)
+        background = _load_artwork(cover_path, settings.size, settings.output_size)
 
         def make_frame(time: float) -> np.ndarray:
+            if should_cancel():
+                raise CancelledError("Generation cancelled.")
             if envelope is None:
                 return background
             index = min(int(time * settings.fps), len(envelope) - 1)
@@ -277,15 +324,17 @@ def render_track(
                 fps=settings.fps,
                 codec="libx264",
                 audio_codec="aac",
-                audio_bitrate="256k",
-                preset="medium",
+                audio_bitrate=settings.audio_bitrate,
+                preset=settings.preset,
                 threads=max(1, min(4, os.cpu_count() or 1)),
-                ffmpeg_params=["-pix_fmt", "yuv420p"],
+                ffmpeg_params=["-pix_fmt", "yuv420p", "-crf", str(settings.crf)],
                 logger=_MoviePyLogger(progress),
             )
         finally:
             audio.close()
             video.close()
+            if should_cancel():
+                output_path.unlink(missing_ok=True)
 
 
 def generate_videos(
@@ -294,6 +343,9 @@ def generate_videos(
     output_dir: Path,
     settings: RenderSettings = RenderSettings(),
     callback: ProgressCallback | None = None,
+    naming_template: str = "{track} - Promo Snippet",
+    conflict_policy: str = "rename",
+    should_cancel: CancelCheck = lambda: False,
 ) -> list[Path]:
     files = list(audio_files)
     if not files:
@@ -301,16 +353,28 @@ def generate_videos(
     ffmpeg = require_ffmpeg()
     outputs: list[Path] = []
     for track_index, source in enumerate(files):
+        if should_cancel():
+            raise CancelledError("Generation cancelled.")
         if callback:
             callback(round(track_index / len(files) * 100), f"Analysing {source.name}")
-        output = output_dir / f"{source.stem} - Promo Snippet.mp4"
+        try:
+            output_name = naming_template.format(track=source.stem, number=track_index + 1)
+        except (KeyError, ValueError) as exc:
+            raise ValueError("Invalid promo naming template. Use {track} and optionally {number}.") from exc
+        output = resolve_output(output_dir / f"{safe_filename(output_name)}.mp4", conflict_policy)
+        if output is None:
+            continue
 
         def track_progress(fraction: float, index: int = track_index, name: str = source.name) -> None:
             overall = round((index + fraction) / len(files) * 100)
             if callback:
                 callback(overall, f"Rendering {name}")
 
-        render_track(source, cover_path, output, settings, ffmpeg, track_progress)
+        try:
+            render_track(source, cover_path, output, settings, ffmpeg, track_progress, should_cancel)
+        except Exception:
+            output.unlink(missing_ok=True)
+            raise
         outputs.append(output)
     if callback:
         callback(100, f"Finished {len(outputs)} video{'s' if len(outputs) != 1 else ''}")
@@ -322,6 +386,9 @@ def cut_video_clips(
     clips: Iterable[ClipRequest],
     output_dir: Path,
     callback: ProgressCallback | None = None,
+    naming_template: str = "{source} - {title}",
+    conflict_policy: str = "rename",
+    should_cancel: CancelCheck = lambda: False,
 ) -> list[Path]:
     """Create accurately timed, broadly compatible H.264/AAC clips."""
     requests = list(clips)
@@ -331,9 +398,18 @@ def cut_video_clips(
     output_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
     for index, clip in enumerate(requests):
+        if should_cancel():
+            raise CancelledError("Clip creation cancelled.")
         if clip.start < 0 or clip.duration <= 0:
             raise ValueError(f"Clip {index + 1} has an invalid start or duration.")
-        output = output_dir / f"{source.stem} - Clip {index + 1:02d}.mp4"
+        title = clip.title.strip() or f"Clip {index + 1:02d}"
+        try:
+            output_name = naming_template.format(source=source.stem, title=title, number=index + 1)
+        except (KeyError, ValueError) as exc:
+            raise ValueError("Invalid clip naming template. Use {source}, {title}, and {number}.") from exc
+        output = resolve_output(output_dir / f"{safe_filename(output_name)}.mp4", conflict_policy)
+        if output is None:
+            continue
         command = [
             ffmpeg,
             "-y",
@@ -378,6 +454,11 @@ def cut_video_clips(
         )
         assert process.stdout is not None
         for line in process.stdout:
+            if should_cancel():
+                process.terminate()
+                process.wait()
+                output.unlink(missing_ok=True)
+                raise CancelledError("Clip creation cancelled.")
             key, _, value = line.strip().partition("=")
             if key in {"out_time_us", "out_time_ms"}:
                 try:

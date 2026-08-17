@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import traceback
 from pathlib import Path
@@ -12,6 +13,7 @@ from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -25,6 +27,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSpinBox,
     QTabWidget,
     QTableWidget,
     QVBoxLayout,
@@ -32,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from .core import (
+    CancelledError,
     ClipRequest,
     RenderSettings,
     cut_video_clips,
@@ -48,6 +52,27 @@ def open_preview(parent: QWidget, path: str | Path) -> None:
     target = Path(path).expanduser()
     if not target.is_file() or not QDesktopServices.openUrl(QUrl.fromLocalFile(os.fspath(target))):
         QMessageBox.warning(parent, "Preview unavailable", f"Could not open:\n{target}")
+
+
+def show_error(parent: QWidget, title: str, message: str, details: str) -> None:
+    box = QMessageBox(QMessageBox.Icon.Critical, title, message, parent=parent)
+    box.setDetailedText(details)
+    box.exec()
+
+
+def show_completion(parent: QWidget, title: str, outputs: list[str]) -> None:
+    if not outputs:
+        QMessageBox.information(parent, title, "No new files were created.")
+        return
+    box = QMessageBox(QMessageBox.Icon.Information, title, f"Created {len(outputs)} file{'s' if len(outputs) != 1 else ''}.", parent=parent)
+    open_file = box.addButton("Open First File", QMessageBox.ButtonRole.ActionRole)
+    show_folder = box.addButton("Show in Folder", QMessageBox.ButtonRole.ActionRole)
+    box.addButton(QMessageBox.StandardButton.Ok)
+    box.exec()
+    if box.clickedButton() is open_file:
+        open_preview(parent, outputs[0])
+    elif box.clickedButton() is show_folder:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.fspath(Path(outputs[0]).parent)))
 
 
 def bundled_asset(name: str) -> Path:
@@ -79,14 +104,17 @@ def section_group(title: str, content_layout) -> QGroupBox:  # noqa: ANN001
 class RenderWorker(QThread):
     progress = Signal(int, str)
     succeeded = Signal(list)
-    failed = Signal(str)
+    failed = Signal(str, str)
+    cancelled = Signal()
 
-    def __init__(self, tracks: list[Path], cover: Path, output: Path, settings: RenderSettings):
+    def __init__(self, tracks: list[Path], cover: Path, output: Path, settings: RenderSettings, naming: str, conflict: str):
         super().__init__()
         self.tracks = tracks
         self.cover = cover
         self.output = output
         self.settings = settings
+        self.naming = naming
+        self.conflict = conflict
 
     def run(self) -> None:
         try:
@@ -96,23 +124,32 @@ class RenderWorker(QThread):
                 self.output,
                 self.settings,
                 lambda percent, status: self.progress.emit(percent, status),
+                self.naming,
+                self.conflict,
+                self.isInterruptionRequested,
             )
             self.succeeded.emit([os.fspath(path) for path in results])
+        except CancelledError:
+            self.cancelled.emit()
         except Exception as exc:
-            traceback.print_exc()
-            self.failed.emit(str(exc))
+            details = traceback.format_exc()
+            print(details, file=sys.stderr)
+            self.failed.emit(str(exc), details)
 
 
 class ClipWorker(QThread):
     progress = Signal(int, str)
     succeeded = Signal(list)
-    failed = Signal(str)
+    failed = Signal(str, str)
+    cancelled = Signal()
 
-    def __init__(self, source: Path, clips: list[ClipRequest], output: Path):
+    def __init__(self, source: Path, clips: list[ClipRequest], output: Path, naming: str, conflict: str):
         super().__init__()
         self.source = source
         self.clips = clips
         self.output = output
+        self.naming = naming
+        self.conflict = conflict
 
     def run(self) -> None:
         try:
@@ -121,11 +158,17 @@ class ClipWorker(QThread):
                 self.clips,
                 self.output,
                 lambda percent, status: self.progress.emit(percent, status),
+                self.naming,
+                self.conflict,
+                self.isInterruptionRequested,
             )
             self.succeeded.emit([os.fspath(path) for path in results])
+        except CancelledError:
+            self.cancelled.emit()
         except Exception as exc:
-            traceback.print_exc()
-            self.failed.emit(str(exc))
+            details = traceback.format_exc()
+            print(details, file=sys.stderr)
+            self.failed.emit(str(exc), details)
 
 
 class PathRow(QWidget):
@@ -218,12 +261,13 @@ class ClipsTab(QWidget):
         output_form.addRow("Export folder", self.output)
         output_form.addRow("", self.output_status)
 
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Start", "End (optional)", "Duration", ""])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["Title", "Start", "End (optional)", "Duration", ""])
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table.setMinimumHeight(170)
         self.add_button = QPushButton("+ Add clip")
         self.add_button.clicked.connect(lambda: self.add_row())
@@ -233,6 +277,9 @@ class ClipsTab(QWidget):
         self.generate.clicked.connect(self.start_generation)
         self.clear_button = QPushButton("Clear")
         self.clear_button.clicked.connect(self.clear)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.hide()
+        self.cancel_button.clicked.connect(self.cancel)
         self.progress_status = QLabel("")
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
@@ -256,6 +303,7 @@ class ClipsTab(QWidget):
         layout.addWidget(self.progress)
         actions = QHBoxLayout()
         actions.addWidget(self.clear_button)
+        actions.addWidget(self.cancel_button)
         actions.addStretch()
         actions.addWidget(self.generate)
         layout.addLayout(actions)
@@ -269,13 +317,14 @@ class ClipsTab(QWidget):
         self.add_row()
         self.validate()
 
-    def add_row(self, start: str = "", end: str = "", duration: str = "60") -> None:
+    def add_row(self, title: str = "", start: str = "", end: str = "", duration: str = "60") -> None:
         row = self.table.rowCount()
         self.table.insertRow(row)
         for column, value, placeholder in (
-            (0, start, "00:03:15"),
-            (1, end, "Optional"),
-            (2, duration, "60"),
+            (0, title, f"Clip {row + 1:02d}"),
+            (1, start, "00:03:15"),
+            (2, end, "Optional"),
+            (3, duration, "60"),
         ):
             edit = QLineEdit(value)
             edit.setPlaceholderText(placeholder)
@@ -283,12 +332,12 @@ class ClipsTab(QWidget):
             self.table.setCellWidget(row, column, edit)
         remove = QPushButton("Remove")
         remove.clicked.connect(lambda _checked=False, button=remove: self.remove_row(button))
-        self.table.setCellWidget(row, 3, remove)
+        self.table.setCellWidget(row, 4, remove)
         self.validate()
 
     def remove_row(self, button: QPushButton) -> None:
         for row in range(self.table.rowCount()):
-            if self.table.cellWidget(row, 3) is button:
+            if self.table.cellWidget(row, 4) is button:
                 self.table.removeRow(row)
                 break
         if self.table.rowCount() == 0:
@@ -298,9 +347,10 @@ class ClipsTab(QWidget):
     def parsed_clips(self) -> tuple[list[ClipRequest], str]:
         clips: list[ClipRequest] = []
         for row in range(self.table.rowCount()):
-            start_text = self.table.cellWidget(row, 0).text().strip()
-            end_text = self.table.cellWidget(row, 1).text().strip()
-            duration_text = self.table.cellWidget(row, 2).text().strip()
+            title_text = self.table.cellWidget(row, 0).text().strip()
+            start_text = self.table.cellWidget(row, 1).text().strip()
+            end_text = self.table.cellWidget(row, 2).text().strip()
+            duration_text = self.table.cellWidget(row, 3).text().strip()
             if not start_text:
                 return [], f"Clip {row + 1}: enter a start timestamp."
             try:
@@ -315,7 +365,7 @@ class ClipsTab(QWidget):
                         raise ValueError("Duration must be greater than zero.")
             except ValueError as exc:
                 return [], f"Clip {row + 1}: {exc}"
-            clips.append(ClipRequest(start, duration))
+            clips.append(ClipRequest(start, duration, title_text))
         return clips, f"✓ {len(clips)} clip{'s' if len(clips) != 1 else ''} ready."
 
     def validate(self) -> bool:
@@ -340,6 +390,12 @@ class ClipsTab(QWidget):
         if not enabled:
             self.preview_source.setEnabled(False)
 
+    def cancel(self) -> None:
+        if self.worker:
+            self.cancel_button.setEnabled(False)
+            self.progress_status.setText("Cancelling safely…")
+            self.worker.requestInterruption()
+
     def clear(self) -> None:
         self.source.set_path("")
         self.output.set_path(self.settings.value("general/default_output", ""))
@@ -359,16 +415,23 @@ class ClipsTab(QWidget):
         clips, _ = self.parsed_clips()
         self.settings.setValue("clips/source", self.source.path)
         self.settings.setValue("clips/output", self.output.path)
-        self.worker = ClipWorker(Path(self.source.path), clips, Path(self.output.path))
+        self.worker = ClipWorker(
+            Path(self.source.path), clips, Path(self.output.path),
+            self.settings.value("general/clip_naming", "{source} - {title}"),
+            self.settings.value("general/conflict_policy", "rename"),
+        )
         self.worker.progress.connect(self.on_progress)
         self.worker.succeeded.connect(self.on_success)
         self.worker.failed.connect(self.on_failure)
+        self.worker.cancelled.connect(self.on_cancelled)
         self.worker.finished.connect(self.worker_finished)
         self.progress.setValue(0)
         self.progress.show()
         self.progress_status.setText("Preparing clips…")
         self.progress_status.show()
         self.set_inputs_enabled(False)
+        self.cancel_button.setEnabled(True)
+        self.cancel_button.show()
         self.generate.setEnabled(False)
         self.worker.start()
 
@@ -378,19 +441,19 @@ class ClipsTab(QWidget):
 
     def on_success(self, outputs: list[str]) -> None:
         if self.settings.value("general/notify_finished", True, type=bool):
-            QMessageBox.information(
-                self,
-                "Clips created",
-                f"Created {len(outputs)} clip{'s' if len(outputs) != 1 else ''} in:\n{self.output.path}",
-            )
+            show_completion(self, "Clips created", outputs)
 
-    def on_failure(self, message: str) -> None:
-        QMessageBox.critical(self, "Clip creation failed", message)
+    def on_failure(self, message: str, details: str) -> None:
+        show_error(self, "Clip creation failed", message, details)
+
+    def on_cancelled(self) -> None:
+        self.progress_status.setText("Cancelled. Partial files were removed.")
 
     def worker_finished(self) -> None:
         worker = self.worker
         self.worker = None
         self.set_inputs_enabled(True)
+        self.cancel_button.hide()
         self.validate()
         if worker:
             worker.deleteLater()
@@ -411,6 +474,17 @@ class SettingsTab(QWidget):
         self.notify_finished.setChecked(
             self.settings.value("general/notify_finished", True, type=bool)
         )
+        self.promo_naming = QLineEdit(
+            self.settings.value("general/promo_naming", "{track} - Promo Snippet")
+        )
+        self.clip_naming = QLineEdit(
+            self.settings.value("general/clip_naming", "{source} - {title}")
+        )
+        self.conflict_policy = QComboBox()
+        for label, value in (("Create a numbered copy", "rename"), ("Overwrite", "overwrite"), ("Skip", "skip")):
+            self.conflict_policy.addItem(label, value)
+        saved_conflict = self.settings.value("general/conflict_policy", "rename")
+        self.conflict_policy.setCurrentIndex(max(0, self.conflict_policy.findData(saved_conflict)))
         saved_output = self.settings.value("general/default_output", "")
         if saved_output and Path(saved_output).is_dir():
             self.default_output.edit.setText(saved_output)
@@ -420,6 +494,9 @@ class SettingsTab(QWidget):
         form.addRow("Default Folder for Export", self.default_output)
         form.addRow("", self.output_status)
         form.addRow("Notifications", self.notify_finished)
+        form.addRow("Promo filename", self.promo_naming)
+        form.addRow("Clip filename", self.clip_naming)
+        form.addRow("Existing files", self.conflict_policy)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
@@ -431,6 +508,9 @@ class SettingsTab(QWidget):
 
         self.default_output.changed.connect(self.save)
         self.notify_finished.toggled.connect(self.save)
+        self.promo_naming.editingFinished.connect(self.save)
+        self.clip_naming.editingFinished.connect(self.save)
+        self.conflict_policy.currentIndexChanged.connect(self.save)
         self.validate()
 
     def validate(self) -> None:
@@ -449,6 +529,9 @@ class SettingsTab(QWidget):
         elif not path:
             self.settings.remove("general/default_output")
         self.settings.setValue("general/notify_finished", self.notify_finished.isChecked())
+        self.settings.setValue("general/promo_naming", self.promo_naming.text().strip() or "{track} - Promo Snippet")
+        self.settings.setValue("general/clip_naming", self.clip_naming.text().strip() or "{source} - {title}")
+        self.settings.setValue("general/conflict_policy", self.conflict_policy.currentData())
         self.validate()
         self.changed.emit()
 
@@ -543,6 +626,35 @@ class MainWindow(QMainWindow):
         self.pre_drop.setSingleStep(0.5)
         self.pre_drop.setSuffix(" seconds")
         self.pre_drop.setValue(2.0)
+        self.profile = QComboBox()
+        for label, value in (
+            ("Artwork native", None),
+            ("Vertical 1080 × 1920", (1080, 1920)),
+            ("Square 1080 × 1080", (1080, 1080)),
+            ("Landscape 1920 × 1080", (1920, 1080)),
+        ):
+            self.profile.addItem(label, value)
+        self.duration = QDoubleSpinBox()
+        self.duration.setRange(1, 600)
+        self.duration.setValue(60)
+        self.duration.setSuffix(" seconds")
+        self.duration.valueChanged.connect(self.validate)
+        self.fps = QSpinBox()
+        self.fps.setRange(12, 60)
+        self.fps.setValue(24)
+        self.crf = QSpinBox()
+        self.crf.setRange(14, 30)
+        self.crf.setValue(18)
+        self.crf.setToolTip("Lower values produce higher quality and larger files.")
+        self.encoding_speed = QComboBox()
+        for preset in ("ultrafast", "fast", "medium", "slow"):
+            self.encoding_speed.addItem(preset.title(), preset)
+        self.encoding_speed.setCurrentIndex(self.encoding_speed.findData("medium"))
+        self.audio_bitrate = QComboBox()
+        for bitrate in ("128k", "192k", "256k", "320k"):
+            self.audio_bitrate.addItem(bitrate, bitrate)
+        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("256k"))
+        self.job_summary = QLabel("")
 
         input_form = QFormLayout()
         input_form.setSpacing(12)
@@ -566,6 +678,13 @@ class MainWindow(QMainWindow):
         output_form.setSpacing(12)
         output_form.addRow("Export folder", self.output)
         output_form.addRow("", self.output_status)
+        output_form.addRow("Video profile", self.profile)
+        output_form.addRow("Duration", self.duration)
+        output_form.addRow("Frame rate", self.fps)
+        output_form.addRow("Quality (CRF)", self.crf)
+        output_form.addRow("Encoding speed", self.encoding_speed)
+        output_form.addRow("Audio bitrate", self.audio_bitrate)
+        output_form.addRow("Job estimate", self.job_summary)
 
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
@@ -575,6 +694,9 @@ class MainWindow(QMainWindow):
         self.generate.clicked.connect(self.start_generation)
         self.clear_button = QPushButton("Clear")
         self.clear_button.clicked.connect(self.clear)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.hide()
+        self.cancel_button.clicked.connect(self.cancel)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
@@ -597,6 +719,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.progress)
         actions = QHBoxLayout()
         actions.addWidget(self.clear_button)
+        actions.addWidget(self.cancel_button)
         actions.addStretch()
         actions.addWidget(self.generate)
         layout.addLayout(actions)
@@ -650,6 +773,12 @@ class MainWindow(QMainWindow):
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
         self.output_status.setText("✓ Export folder is writable." if output_ok else "Choose a writable export folder.")
         ready = music_ok and cover_ok and output_ok and self.worker is None
+        if tracks:
+            total_seconds = len(tracks) * self.duration.value()
+            free_gb = shutil.disk_usage(output_path).free / 1024**3 if output_ok else 0
+            self.job_summary.setText(f"{len(tracks)} output(s), {total_seconds / 60:.1f} min total • {free_gb:.1f} GB free")
+        else:
+            self.job_summary.setText("Select audio to estimate this job.")
         self.preview_audio.setEnabled(music_ok and self.worker is None)
         self.generate.setEnabled(ready)
         return ready
@@ -680,9 +809,24 @@ class MainWindow(QMainWindow):
             row.set_enabled(enabled)
         self.bass_effect.setEnabled(enabled)
         self.pre_drop.setEnabled(enabled)
+        for control in (
+            self.profile,
+            self.duration,
+            self.fps,
+            self.crf,
+            self.encoding_speed,
+            self.audio_bitrate,
+        ):
+            control.setEnabled(enabled)
         self.clear_button.setEnabled(enabled)
         if not enabled:
             self.preview_audio.setEnabled(False)
+
+    def cancel(self) -> None:
+        if self.worker:
+            self.cancel_button.setEnabled(False)
+            self.progress_status.setText("Cancelling safely…")
+            self.worker.requestInterruption()
 
     def clear(self) -> None:
         self.music.set_path("")
@@ -690,6 +834,12 @@ class MainWindow(QMainWindow):
         self.output.set_path(self.settings.value("general/default_output", ""))
         self.bass_effect.setChecked(True)
         self.pre_drop.setValue(2.0)
+        self.profile.setCurrentIndex(0)
+        self.duration.setValue(60)
+        self.fps.setValue(24)
+        self.crf.setValue(18)
+        self.encoding_speed.setCurrentIndex(self.encoding_speed.findData("medium"))
+        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("256k"))
         self.progress.setValue(0)
         self.progress.hide()
         self.progress_status.clear()
@@ -705,8 +855,14 @@ class MainWindow(QMainWindow):
         for key, value in (("music", self.music.path), ("cover", self.cover.path), ("output", self.output.path)):
             self.settings.setValue(key, value)
         render_settings = RenderSettings(
+            fps=self.fps.value(),
+            duration=self.duration.value(),
             pre_drop=self.pre_drop.value(),
             bass_effect=self.bass_effect.isChecked(),
+            output_size=self.profile.currentData(),
+            preset=self.encoding_speed.currentData(),
+            crf=self.crf.value(),
+            audio_bitrate=self.audio_bitrate.currentData(),
         )
         self.settings.setValue("promo/bass_effect", self.bass_effect.isChecked())
         self.settings.setValue("promo/pre_drop", self.pre_drop.value())
@@ -715,16 +871,21 @@ class MainWindow(QMainWindow):
             Path(self.cover.path),
             Path(self.output.path),
             render_settings,
+            self.settings.value("general/promo_naming", "{track} - Promo Snippet"),
+            self.settings.value("general/conflict_policy", "rename"),
         )
         self.worker.progress.connect(self.on_progress)
         self.worker.succeeded.connect(self.on_success)
         self.worker.failed.connect(self.on_failure)
+        self.worker.cancelled.connect(self.on_cancelled)
         self.worker.finished.connect(self.worker_finished)
         self.progress.setValue(0)
         self.progress.show()
         self.progress_status.setText("Preparing…")
         self.progress_status.show()
         self.set_inputs_enabled(False)
+        self.cancel_button.setEnabled(True)
+        self.cancel_button.show()
         self.generate.setEnabled(False)
         self.worker.start()
 
@@ -734,19 +895,19 @@ class MainWindow(QMainWindow):
 
     def on_success(self, outputs: list[str]) -> None:
         if self.settings.value("general/notify_finished", True, type=bool):
-            QMessageBox.information(
-                self,
-                "Videos generated",
-                f"Created {len(outputs)} promo video{'s' if len(outputs) != 1 else ''} in:\n{self.output.path}",
-            )
+            show_completion(self, "Videos generated", outputs)
 
-    def on_failure(self, message: str) -> None:
-        QMessageBox.critical(self, "Generation failed", message)
+    def on_failure(self, message: str, details: str) -> None:
+        show_error(self, "Generation failed", message, details)
+
+    def on_cancelled(self) -> None:
+        self.progress_status.setText("Cancelled. Partial files were removed.")
 
     def worker_finished(self) -> None:
         worker = self.worker
         self.worker = None
         self.set_inputs_enabled(True)
+        self.cancel_button.hide()
         self.validate()
         if worker:
             worker.deleteLater()

@@ -18,6 +18,10 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 - Configure how many seconds before the detected drop the snippet begins (default: 2 seconds).
 - See an inline thumbnail of the selected artwork and play the first detected track in the system audio player.
 - Clear the complete form and saved selections to start fresh.
+- Choose artwork-native, vertical, square, or landscape output profiles.
+- Configure duration, frame rate, CRF quality, encoding speed, and audio bitrate.
+- Cancel active rendering safely; partial outputs are removed.
+- Review job size/duration estimates before starting.
 
 ## Livestream Clips tab
 
@@ -30,6 +34,7 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 - Follow overall FFmpeg progress while clips are rendered.
 - Play the selected source recording in the system video player before cutting.
 - Clear the source, export folder, timestamps, progress, and saved selections.
+- Give every clip a descriptive title and cancel active clip creation safely.
 
 ## About tab
 
@@ -39,6 +44,7 @@ Displays the transparent full brand lockup, current application version, open-so
 
 - Choose a default export folder shared by all tools.
 - Enable or disable completion popups with **Notify when finished**.
+- Customize promo/clip filename templates and choose overwrite, skip, or numbered-copy behavior.
 
 ## Run on macOS during development
 
