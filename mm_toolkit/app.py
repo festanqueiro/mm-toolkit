@@ -70,6 +70,20 @@ from . import __version__
 from .versioning import is_newer_version
 
 
+TIMESTAMP_FIELD_STYLE = (
+    "QLineEdit, QDoubleSpinBox { background-color: palette(base); "
+    "border: 1px solid palette(mid); border-radius: 6px; padding: 5px 9px; "
+    "color: palette(text); }"
+    "QLineEdit:focus, QDoubleSpinBox:focus { border-color: palette(highlight); }"
+)
+TIMESTAMP_BUTTON_STYLE = (
+    "QPushButton { background-color: palette(button); border: 1px solid palette(mid); "
+    "border-radius: 6px; padding: 0 12px; color: palette(button-text); }"
+    "QPushButton:hover { background-color: palette(midlight); }"
+    "QPushButton:pressed { background-color: palette(mid); }"
+)
+
+
 def open_preview(parent: QWidget, path: str | Path) -> None:
     target = Path(path).expanduser()
     if not target.is_file() or not QDesktopServices.openUrl(QUrl.fromLocalFile(os.fspath(target))):
@@ -355,21 +369,12 @@ class DropStartField(QWidget):
         super().__init__()
         self.edit = QLineEdit(value)
         self.edit.setFixedSize(150, 38)
-        self.edit.setStyleSheet(
-            "QLineEdit { background-color: palette(base); border: 1px solid palette(mid); "
-            "border-radius: 6px; padding: 5px 9px; color: palette(text); }"
-            "QLineEdit:focus { border-color: palette(highlight); }"
-        )
+        self.edit.setStyleSheet(TIMESTAMP_FIELD_STYLE)
         self.edit.setPlaceholderText("HH:MM:SS")
         self.edit.textChanged.connect(self.textChanged)
         self.detect_button = QPushButton("✨")
         self.detect_button.setFixedSize(38, 38)
-        self.detect_button.setStyleSheet(
-            "QPushButton { background-color: palette(button); border: 1px solid palette(mid); "
-            "border-radius: 6px; padding: 0; color: palette(button-text); }"
-            "QPushButton:hover { background-color: palette(midlight); }"
-            "QPushButton:pressed { background-color: palette(mid); }"
-        )
+        self.detect_button.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
         self.detect_button.setToolTip("Analyze this track and propose a drop start time")
         self.detect_button.setAccessibleName("Detect drop for this track")
         self.detect_button.clicked.connect(self.detect_requested)
@@ -493,7 +498,7 @@ class ClipsTab(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.verticalHeader().setDefaultSectionSize(46)
         self.table.setStyleSheet(
             "QTableWidget {"
             "  border: 1px solid rgba(127, 127, 127, 0.35);"
@@ -598,12 +603,15 @@ class ClipsTab(QWidget):
             (3, duration, "60"),
         ):
             edit = ClipField(value)
-            edit.setMinimumHeight(34)
+            edit.setFixedHeight(38)
+            edit.setStyleSheet(TIMESTAMP_FIELD_STYLE)
             edit.setPlaceholderText(placeholder)
             edit.textChanged.connect(self.validate)
             edit.focused.connect(lambda row=row, column=column: self.table.setCurrentCell(row, column))
             self.table.setCellWidget(row, column, edit)
         remove = QPushButton("Remove")
+        remove.setFixedHeight(38)
+        remove.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
         remove.clicked.connect(lambda _checked=False, button=remove: self.remove_row(button))
         self.table.setCellWidget(row, 4, remove)
         self.table.setCurrentCell(row, 0)
@@ -616,16 +624,20 @@ class ClipsTab(QWidget):
         title = self.table.cellWidget(current_row, 0).text().strip() or f"Clip {current_row + 1:02d}"
         self.active_clip_label.setText(f"Editing clip {current_row + 1}: {title}  •  Set Start/End updates this row")
         for row in range(self.table.rowCount()):
-            style = (
-                "color: palette(text); background-color: palette(midlight); "
-                "border: 1px solid palette(mid); border-radius: 5px; padding: 4px 7px;"
-                if row == current_row
-                else "border: 1px solid transparent; padding: 4px 7px;"
-            )
             for column in range(self.table.columnCount()):
                 widget = self.table.cellWidget(row, column)
                 if widget:
-                    widget.setStyleSheet(style)
+                    base_style = (
+                        TIMESTAMP_BUTTON_STYLE
+                        if isinstance(widget, QPushButton)
+                        else TIMESTAMP_FIELD_STYLE
+                    )
+                    active_style = (
+                        "QPushButton, QLineEdit { background-color: palette(midlight); }"
+                        if row == current_row
+                        else ""
+                    )
+                    widget.setStyleSheet(base_style + active_style)
 
     def remove_row(self, button: QPushButton) -> None:
         for row in range(self.table.rowCount()):
@@ -1655,11 +1667,7 @@ class MainWindow(QMainWindow):
             start.detect_requested.connect(lambda row=row: self.start_drop_detection(row))
             duration = QDoubleSpinBox()
             duration.setFixedSize(150, 38)
-            duration.setStyleSheet(
-                "QDoubleSpinBox { background-color: palette(base); border: 1px solid palette(mid); "
-                "border-radius: 6px; padding: 5px 9px; color: palette(text); }"
-                "QDoubleSpinBox:focus { border-color: palette(highlight); }"
-            )
+            duration.setStyleSheet(TIMESTAMP_FIELD_STYLE)
             duration.setRange(1, 3600)
             duration.setDecimals(1)
             duration.setSuffix(" s")
@@ -1667,12 +1675,7 @@ class MainWindow(QMainWindow):
             duration.valueChanged.connect(self.validate)
             preview = QPushButton("▶ Listen")
             preview.setFixedSize(150, 38)
-            preview.setStyleSheet(
-                "QPushButton { background-color: palette(button); border: 1px solid palette(mid); "
-                "border-radius: 6px; padding: 0 12px; color: palette(button-text); }"
-                "QPushButton:hover { background-color: palette(midlight); }"
-                "QPushButton:pressed { background-color: palette(mid); }"
-            )
+            preview.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
             preview.clicked.connect(
                 lambda _checked=False, row=row, button=preview: self.toggle_promo_preview(row, button)
             )
