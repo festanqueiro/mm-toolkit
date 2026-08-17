@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime
 
 import cv2
-from PySide6.QtCore import QByteArray, QSettings, QThread, Qt, QUrl, Signal
+from PySide6.QtCore import QByteArray, QSize, QSettings, QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSlider,
+    QSizePolicy,
     QSpinBox,
     QStyle,
     QTabWidget,
@@ -362,6 +363,19 @@ class ClipField(QLineEdit):
         self.focused.emit()
 
 
+class VideoPreviewWidget(QVideoWidget):
+    """Responsive 16:9 preview surface that preserves the source aspect ratio."""
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        return max(220, round(width * 9 / 16))
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(640, 360)
+
+
 class DropStartField(QWidget):
     """Start-time editor with a per-track drop detection action."""
 
@@ -451,8 +465,10 @@ class ClipsTab(QWidget):
         self.player = QMediaPlayer(self)
         self.player_audio = QAudioOutput(self)
         self.player.setAudioOutput(self.player_audio)
-        self.video_preview = QVideoWidget()
-        self.video_preview.setMinimumHeight(170)
+        self.video_preview = VideoPreviewWidget()
+        self.video_preview.setMinimumSize(360, 220)
+        self.video_preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.video_preview.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self.video_preview.hide()
         self.player.setVideoOutput(self.video_preview)
         self.play_button = QPushButton("▶ Play")
@@ -578,8 +594,9 @@ class ClipsTab(QWidget):
         right_column.addWidget(self.clip_output_group)
         feature_columns = QHBoxLayout()
         feature_columns.setSpacing(14)
-        feature_columns.addWidget(section_group("Input", clip_input_layout), 1)
-        feature_columns.addLayout(right_column, 1)
+        self.clip_input_group = section_group("Input", clip_input_layout)
+        feature_columns.addWidget(self.clip_input_group, 5)
+        feature_columns.addLayout(right_column, 4)
         layout.addLayout(feature_columns, 1)
         layout.addWidget(self.progress_status)
         layout.addWidget(self.progress)
