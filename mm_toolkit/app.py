@@ -450,8 +450,9 @@ class ClipsTab(QWidget):
         self.active_clip_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.active_clip_label.setStyleSheet(
             "QLabel {"
-            "  color: white;"
-            "  background-color: #2563eb;"
+            "  color: palette(text);"
+            "  background-color: palette(alternate-base);"
+            "  border: 1px solid palette(mid);"
             "  border-radius: 8px;"
             "  padding: 7px 12px;"
             "  font-weight: 700;"
@@ -488,6 +489,8 @@ class ClipsTab(QWidget):
             "  border-radius: 8px;"
             "  background: palette(base);"
             "  alternate-background-color: palette(alternate-base);"
+            "  selection-background-color: palette(midlight);"
+            "  selection-color: palette(text);"
             "}"
             "QHeaderView::section {"
             "  background: palette(midlight);"
@@ -600,13 +603,13 @@ class ClipsTab(QWidget):
             self.active_clip_label.setText("Select a clip to edit")
             return
         title = self.table.cellWidget(current_row, 0).text().strip() or f"Clip {current_row + 1:02d}"
-        self.active_clip_label.setText(f"ACTIVE CLIP {current_row + 1}: {title}  •  Set Start/End updates this row")
+        self.active_clip_label.setText(f"Editing clip {current_row + 1}: {title}  •  Set Start/End updates this row")
         for row in range(self.table.rowCount()):
             style = (
-                "color: #0f172a; background-color: #dbeafe; "
-                "border: 2px solid #2563eb; border-radius: 5px; padding: 4px 7px;"
+                "color: palette(text); background-color: palette(midlight); "
+                "border: 1px solid palette(mid); border-radius: 5px; padding: 4px 7px;"
                 if row == current_row
-                else "padding: 4px 7px;"
+                else "border: 1px solid transparent; padding: 4px 7px;"
             )
             for column in range(self.table.columnCount()):
                 widget = self.table.cellWidget(row, column)
