@@ -6,76 +6,16 @@
 
 **Audio & Video tools for all**
 
-Create and prepare music content from one desktop app:
-
-- Generate music videos from audio and artwork.
-- Find the drop, set timestamps, and preview promo clips.
-- Cut short clips from livestream recordings.
-- Convert audio and video files into common formats.
+Create and prepare music content from one desktop app.
 
 Available for macOS and Windows.
 
-## Video Generator tab
+## Features
 
-- Pick one audio file or a folder and immediately verify the supported files found.
-- Supports WAV, AIFF, FLAC, MP3, M4A, AAC, and OGG input through FFmpeg.
-- Pick and validate a PNG, JPEG, WebP, or TIFF image, or an MP4, MOV, M4V, MKV, AVI, or WebM video.
-- Pick a writable export folder.
-- Generate one H.264/AAC MP4 per track at the visual's native dimensions and aspect ratio.
-- Loop video visuals when they are shorter than the selected audio clip.
-- Mute the original video's sound by default, or keep it and mix it with the selected music by clearing **Mute original video sound**.
-- Keep the UI responsive and show current-track and overall rendering progress.
-- Remember the last selected paths.
-- Detect the main bass-energy drop and animate the original punchy zoom-blur effect.
-- Turn the bass-reactive zoom blur on or off; when off, the selected image or video is preserved without that effect.
-- Enable or disable video and audio fade-in/fade-out independently.
-- Add one promo row per detected audio file and edit each track's start time and duration independently.
-- Listen to each configured promo clip directly from its Audio timestamps row before rendering.
-- Use the ✨ button beside any Start field to analyze that track and propose a drop-based start time with a configurable lead-in.
-- See an inline thumbnail of the selected image or the first frame of the selected video.
-- Clear the complete form and saved selections to start fresh.
-- Choose visual-native, vertical, square, or landscape output profiles.
-- Configure per-track duration plus shared frame rate, CRF quality, encoding speed, and audio bitrate.
-- Cancel active rendering safely; partial outputs are removed.
-- Review job size/duration estimates before starting.
-- See the estimated per-video and combined output duration in Output.
-
-## Livestream Clips tab
-
-- Pick a long MP4, MOV, M4V, MKV, AVI, or WebM recording.
-- Add as many clip rows as needed.
-- Enter timestamps as `HH:MM:SS`, `MM:SS`, or plain seconds.
-- Give each clip a start plus either an optional end or a duration.
-- Default duration is 60 seconds for Instagram-style clips.
-- Export accurately timed, broadly compatible H.264/AAC MP4 files.
-- Follow overall FFmpeg progress while clips are rendered.
-- Play the selected source recording in the system video player before cutting.
-- Clear the source, export folder, timestamps, progress, and saved selections.
-- Give every clip a descriptive title and cancel active clip creation safely.
-- Preview video in the app, scrub the timeline, and set clip start/end from the current playhead.
-
-## Media Converter tab
-
-- Select one or many audio files and convert them to MP3, WAV, AIFF, FLAC, M4A, AAC, or OGG.
-- Choose 128, 192, 256, or 320 kbps when MP3 is the selected output format.
-- Select one or many video files and convert them to MP4, MOV, MKV, AVI, or WebM.
-- Automatically detect audio versus video and prevent incompatible mixed batches.
-- Preview selected inputs, choose a writable export folder, follow progress, and cancel safely.
-- Preserve original filenames while applying the shared overwrite, skip, or numbered-copy policy.
-
-## About tab
-
-Displays the transparent full brand lockup, current application version, open-source description, and GitHub repository link. When GitHub has a newer semantic release, it also shows a clickable download link to that release.
-
-## Settings tab
-
-- Choose a default export folder shared by all tools.
-- Enable or disable completion popups with **Notify when finished**.
-- Customize promo/clip filename templates and choose overwrite, skip, or numbered-copy behavior.
-
-## History tab
-
-Stores up to 20 recent jobs in local OS application settings. Jobs can be loaded back into their tool and their output folder can be reopened. History data is never committed to the repository.
+- **Video Generator:** turn audio plus artwork or video into ready-to-share MP4s, with editable timestamps, clip listening, drop detection, visual effects, fades, and multiple aspect ratios.
+- **Livestream Clips:** preview long recordings, mark precise start/end points, and export multiple titled clips.
+- **Media Converter:** batch-convert common audio and video formats with progress tracking and safe cancellation.
+- **Workflow tools:** shared export settings, filename templates, overwrite controls, recent-job history, and update notifications.
 
 ## Run on macOS during development
 
