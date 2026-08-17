@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFont
+from PySide6.QtGui import QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -46,6 +46,11 @@ def open_preview(parent: QWidget, path: str | Path) -> None:
     target = Path(path).expanduser()
     if not target.is_file() or not QDesktopServices.openUrl(QUrl.fromLocalFile(os.fspath(target))):
         QMessageBox.warning(parent, "Preview unavailable", f"Could not open:\n{target}")
+
+
+def bundled_asset(name: str) -> Path:
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return root / "assets" / name
 
 
 class RenderWorker(QThread):
@@ -526,6 +531,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Media Tools for Record Labels")
     app.setOrganizationName("Media Tools for Record Labels")
+    app.setWindowIcon(QIcon(os.fspath(bundled_asset("Media tools app - Just logo.png"))))
     window = MainWindow()
     window.show()
     return app.exec()
