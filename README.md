@@ -2,7 +2,7 @@
 
 A macOS-first desktop app for recurring record-label video workflows. The application uses a cross-platform Python/Qt codebase so the same UI can be packaged for Windows later.
 
-The macOS bundle, Windows executable, and application windows use the branded Media Tools icon from `assets/`.
+The macOS bundle, Windows executable, and application windows use the transparent branded Media Tools icon from `assets/`.
 
 ## Promo Videos tab
 
