@@ -57,7 +57,7 @@ from .core import (
     RenderSettings,
     VIDEO_OUTPUT_FORMATS,
     convert_media,
-    cut_video_clips,
+    cut_media_clips,
     detect_drop_starts,
     find_audio_files,
     format_timestamp,
@@ -65,6 +65,7 @@ from .core import (
     media_kind,
     parse_timestamp,
     validate_visual,
+    validate_media_source,
     validate_video,
 )
 from . import __version__
@@ -235,7 +236,7 @@ class ClipWorker(QThread):
 
     def run(self) -> None:
         try:
-            results = cut_video_clips(
+            results = cut_media_clips(
                 self.source,
                 self.clips,
                 self.output,
@@ -432,28 +433,26 @@ class ClipsTab(QWidget):
         super().__init__()
         self.settings = settings
         self.worker: ClipWorker | None = None
-        title = page_title("Livestream Clips")
+        title = page_title("Media Cutter")
         subtitle = QLabel(
-            "Create precisely timed social clips from a long recording. "
+            "Cut audio or video into precisely timed clips. "
             "Use HH:MM:SS, MM:SS, or seconds. End is optional; duration defaults to 60 seconds."
         )
         subtitle.setWordWrap(True)
         self.source = PathRow(
-            "Choose source video",
+            "Choose source media",
             "file",
-            "Videos (*.mp4 *.mov *.m4v *.mkv *.avi *.webm)",
+            "Media (*.wav *.wave *.aif *.aiff *.flac *.mp3 *.m4a *.aac *.ogg *.mp4 *.mov *.m4v *.mkv *.avi *.webm)",
         )
         self.output = PathRow("Choose clip export folder", "directory")
         self.source_status = QLabel("")
         self.output_status = QLabel("")
-        self.preview_source = QPushButton("▶ Play Source Video")
-        self.preview_source.setEnabled(False)
-        self.preview_source.clicked.connect(lambda: open_preview(self, self.source.path))
         self.player = QMediaPlayer(self)
         self.player_audio = QAudioOutput(self)
         self.player.setAudioOutput(self.player_audio)
         self.video_preview = QVideoWidget()
         self.video_preview.setMinimumHeight(170)
+        self.video_preview.hide()
         self.player.setVideoOutput(self.video_preview)
         self.play_button = QPushButton("▶ Play")
         self.play_button.setEnabled(False)
@@ -485,9 +484,8 @@ class ClipsTab(QWidget):
 
         input_form = QFormLayout()
         input_form.setSpacing(10)
-        input_form.addRow("Source video", self.source)
+        input_form.addRow("Source media", self.source)
         input_form.addRow("", self.source_status)
-        input_form.addRow("Preview", self.preview_source)
 
         output_form = QFormLayout()
         output_form.setSpacing(10)
@@ -591,12 +589,13 @@ class ClipsTab(QWidget):
         layout.addLayout(actions)
 
         self.source.changed.connect(self.validate)
-        self.source.changed.connect(self.load_video_preview)
+        self.source.changed.connect(self.load_media_preview)
         self.output.changed.connect(self.validate)
         for row, key in ((self.source, "clips/source"), (self.output, "clips/output")):
             value = self.settings.value(key, "")
             if value and Path(value).exists():
                 row.edit.setText(value)
+        self.load_media_preview(self.source.path)
         self.add_row()
         self.validate()
 
@@ -679,10 +678,12 @@ class ClipsTab(QWidget):
             clips.append(ClipRequest(start, duration, title_text))
         return clips, f"✓ {len(clips)} clip{'s' if len(clips) != 1 else ''} ready."
 
-    def load_video_preview(self, path: str) -> None:
-        valid, _ = validate_video(path)
+    def load_media_preview(self, path: str) -> None:
+        valid, _ = validate_media_source(path)
+        kind = media_kind(path) if valid else None
         self.player.stop()
         self.player.setSource(QUrl.fromLocalFile(path) if valid else QUrl())
+        self.video_preview.setVisible(kind == "video")
         self.play_button.setEnabled(valid and self.worker is None)
 
     def toggle_playback(self) -> None:
@@ -713,7 +714,16 @@ class ClipsTab(QWidget):
         self.table.cellWidget(row, column).setText(format_timestamp(self.player.position() / 1000))
 
     def validate(self) -> bool:
-        source_ok, source_message = validate_video(self.source.path)
+        source_ok, source_message = validate_media_source(self.source.path)
+        kind = media_kind(self.source.path) if source_ok else None
+        media_label = kind.title() if kind else "Media"
+        output_format = "MP4" if kind == "video" else Path(self.source.path).suffix.lstrip(".").upper()
+        if output_format == "WAVE":
+            output_format = "WAV"
+        elif output_format == "AIF":
+            output_format = "AIFF"
+        self.clip_output_group.setTitle(f"{media_label} clip output")
+        self.generate.setText(f"Create {media_label} Clips")
         downstream_enabled = source_ok and self.worker is None
         self.clip_timestamps_group.setEnabled(downstream_enabled)
         self.clip_output_group.setEnabled(downstream_enabled)
@@ -722,7 +732,10 @@ class ClipsTab(QWidget):
         self.source_status.setVisible(bool(source_status))
         output_path = Path(self.output.path).expanduser() if self.output.path else None
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
-        output_status = "✓ Export folder is writable." if output_ok else "Export folder is not writable." if self.output.path else ""
+        if output_ok and kind:
+            output_status = f"✓ {media_label} clips will be exported as {output_format} files."
+        else:
+            output_status = "Export folder is not writable." if self.output.path else ""
         self.output_status.setText(output_status)
         self.output_status.setVisible(bool(output_status))
         clips, clip_message = self.parsed_clips()
@@ -730,7 +743,7 @@ class ClipsTab(QWidget):
         ready = source_ok and output_ok and bool(clips) and self.worker is None
         missing = []
         if not source_ok:
-            missing.append("choose a valid source video")
+            missing.append("choose valid source media")
         if not clips:
             missing.append(clip_message.rstrip("."))
         if not output_ok:
@@ -743,25 +756,22 @@ class ClipsTab(QWidget):
             action_message = "✓ Ready to create clips."
         self.generate_requirements.setText(action_message)
         self.generate.setToolTip(action_message)
-        self.preview_source.setEnabled(source_ok and self.worker is None)
         self.generate.setEnabled(ready)
         return ready
 
     def set_inputs_enabled(self, enabled: bool) -> None:
         self.source.set_enabled(enabled)
-        downstream_enabled = enabled and validate_video(self.source.path)[0]
+        downstream_enabled = enabled and validate_media_source(self.source.path)[0]
         self.clip_timestamps_group.setEnabled(downstream_enabled)
         self.clip_output_group.setEnabled(downstream_enabled)
         self.output.set_enabled(enabled)
         self.add_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
         self.clear_button.setEnabled(enabled)
-        self.play_button.setEnabled(enabled and bool(self.source.path))
+        self.play_button.setEnabled(enabled and validate_media_source(self.source.path)[0])
         self.timeline.setEnabled(enabled)
         self.set_start_button.setEnabled(enabled)
         self.set_end_button.setEnabled(enabled)
-        if not enabled:
-            self.preview_source.setEnabled(False)
 
     def cancel(self) -> None:
         if self.worker:
@@ -1338,7 +1348,7 @@ class HistoryTab(QWidget):
         for record in self.records:
             tool = {
                 "promo": "Video Generator",
-                "clips": "Livestream Clips",
+                "clips": "Media Cutter",
                 "converter": "Media Converter",
             }.get(record.get("tool"), "Media Tool")
             source = Path(record.get("source", "")).name or "Unknown input"
@@ -1562,7 +1572,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         icon_color = self.palette().color(QPalette.ColorRole.WindowText).name()
         self.tabs.addTab(container, material_icon("music_video", icon_color), "Video Generator")
-        self.tabs.addTab(self.clips, material_icon("content_cut", icon_color), "Livestream Clips")
+        self.tabs.addTab(self.clips, material_icon("content_cut", icon_color), "Media Cutter")
         self.tabs.addTab(self.converter, material_icon("swap_horiz", icon_color), "Media Converter")
         self.tabs.addTab(self.history, material_icon("history", icon_color), "History")
         self.tabs.addTab(self.app_settings, material_icon("settings", icon_color), "Settings")

@@ -8,9 +8,11 @@ import soundfile as sf
 
 from mm_toolkit.core import (
     AUDIO_EXTENSIONS,
+    ClipRequest,
     RenderSettings,
     _load_artwork,
     convert_media,
+    cut_media_clips,
     find_audio_files,
     format_timestamp,
     generate_videos,
@@ -19,6 +21,7 @@ from mm_toolkit.core import (
     resolve_output,
     safe_filename,
     validate_cover,
+    validate_media_source,
     validate_visual,
     validate_video,
 )
@@ -85,7 +88,12 @@ def test_media_validation(tmp_path: Path) -> None:
     assert validate_cover(cover)[0]
     assert validate_visual(cover)[0]
     assert validate_video(video)[0]
+    assert validate_media_source(video)[0]
+    audio = tmp_path / "source.mp3"
+    audio.touch()
+    assert validate_media_source(audio) == (True, "Source audio ready.")
     assert not validate_video(tmp_path / "source.txt")[0]
+    assert not validate_media_source(tmp_path / "source.txt")[0]
 
 
 def test_video_visual_is_readable(tmp_path: Path) -> None:
@@ -130,6 +138,20 @@ def test_convert_audio_wav_to_flac(tmp_path: Path) -> None:
     output_dir = tmp_path / "exports"
     results = convert_media([source], output_dir, "flac")
     assert results == [output_dir / "Source Audio.flac"]
+    assert results[0].is_file()
+
+
+def test_cut_audio_preserves_source_format(tmp_path: Path) -> None:
+    source = tmp_path / "Source Audio.wav"
+    samples = np.zeros(44100, dtype=np.float32)
+    sf.write(source, samples, 44100)
+    output_dir = tmp_path / "clips"
+    results = cut_media_clips(
+        source,
+        [ClipRequest(start=0.1, duration=0.2, title="Intro")],
+        output_dir,
+    )
+    assert results == [output_dir / "Source Audio - Intro.wav"]
     assert results[0].is_file()
 
 

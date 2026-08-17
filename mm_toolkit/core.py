@@ -126,6 +126,16 @@ def validate_video(path: str | Path) -> tuple[bool, str]:
     return True, "Source video ready."
 
 
+def validate_media_source(path: str | Path) -> tuple[bool, str]:
+    source = Path(path).expanduser()
+    if not source.is_file():
+        return False, "The source media could not be found."
+    kind = media_kind(source)
+    if kind is None:
+        return False, "The selected file is not supported audio or video."
+    return True, f"Source {kind} ready."
+
+
 def find_audio_files(folder: str | Path) -> list[Path]:
     path = Path(folder).expanduser()
     if path.is_file():
@@ -497,7 +507,7 @@ def generate_videos(
     return outputs
 
 
-def cut_video_clips(
+def cut_media_clips(
     source: Path,
     clips: Iterable[ClipRequest],
     output_dir: Path,
@@ -506,11 +516,14 @@ def cut_video_clips(
     conflict_policy: str = "rename",
     should_cancel: CancelCheck = lambda: False,
 ) -> list[Path]:
-    """Create accurately timed, broadly compatible H.264/AAC clips."""
+    """Create accurately timed audio or broadly compatible H.264/AAC video clips."""
     requests = list(clips)
     if not requests:
         raise ValueError("Add at least one clip.")
     ffmpeg = require_ffmpeg()
+    kind = media_kind(source)
+    if kind is None or not source.is_file():
+        raise ValueError("Choose a supported audio or video source.")
     output_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
     for index, clip in enumerate(requests):
@@ -523,7 +536,9 @@ def cut_video_clips(
             output_name = naming_template.format(source=source.stem, title=title, number=index + 1)
         except (KeyError, ValueError) as exc:
             raise ValueError("Invalid clip naming template. Use {source}, {title}, and {number}.") from exc
-        output = resolve_output(output_dir / f"{safe_filename(output_name)}.mp4", conflict_policy)
+        audio_format = {".wave": "wav", ".aif": "aiff"}.get(source.suffix.lower(), source.suffix.lower().lstrip("."))
+        output_format = "mp4" if kind == "video" else audio_format
+        output = resolve_output(output_dir / f"{safe_filename(output_name)}.{output_format}", conflict_policy)
         if output is None:
             continue
         command = [
@@ -537,29 +552,25 @@ def cut_video_clips(
             os.fspath(source),
             "-t",
             str(clip.duration),
-            "-map",
-            "0:v:0",
-            "-map",
-            "0:a?",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "18",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "256k",
-            "-movflags",
-            "+faststart",
-            "-pix_fmt",
-            "yuv420p",
-            "-progress",
-            "pipe:1",
-            "-nostats",
-            os.fspath(output),
         ]
+        if kind == "video":
+            command.extend([
+                "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "fast",
+                "-crf", "18", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart",
+                "-pix_fmt", "yuv420p",
+            ])
+        else:
+            audio_args = {
+                "mp3": ["-vn", "-map", "0:a:0", "-c:a", "libmp3lame", "-b:a", "320k"],
+                "wav": ["-vn", "-map", "0:a:0", "-c:a", "pcm_s24le"],
+                "aiff": ["-vn", "-map", "0:a:0", "-c:a", "pcm_s24be"],
+                "flac": ["-vn", "-map", "0:a:0", "-c:a", "flac"],
+                "m4a": ["-vn", "-map", "0:a:0", "-c:a", "aac", "-b:a", "320k"],
+                "aac": ["-vn", "-map", "0:a:0", "-c:a", "aac", "-b:a", "320k"],
+                "ogg": ["-vn", "-map", "0:a:0", "-c:a", "libvorbis", "-q:a", "8"],
+            }
+            command.extend(audio_args[output_format])
+        command.extend(["-progress", "pipe:1", "-nostats", os.fspath(output)])
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -592,6 +603,10 @@ def cut_video_clips(
     if callback:
         callback(100, f"Finished {len(outputs)} clip{'s' if len(outputs) != 1 else ''}")
     return outputs
+
+
+# Backward-compatible public name for integrations using the original video-only API.
+cut_video_clips = cut_media_clips
 
 
 def convert_media(
