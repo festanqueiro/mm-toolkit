@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
 py -m pip install -r requirements.txt
-py -m PyInstaller --noconfirm --clean MediaToolsForRecordLabels.spec
+py -m PyInstaller --noconfirm --clean MMToolkit.spec
 
-Write-Host "Built: dist/Media Tools for Record Labels/Media Tools for Record Labels.exe"
+Write-Host "Built: dist/MM Toolkit/MM Toolkit.exe"

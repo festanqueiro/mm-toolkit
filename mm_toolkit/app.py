@@ -1,4 +1,4 @@
-"""Desktop interface for Media Tools for Record Labels."""
+"""Desktop interface for MM Toolkit."""
 
 from __future__ import annotations
 
@@ -1042,7 +1042,7 @@ class AboutTab(QWidget):
         super().__init__()
         page_heading = page_title("About")
         logo = QLabel()
-        pixmap = QPixmap(os.fspath(bundled_asset("Media tools app - full logo no bg.png")))
+        pixmap = QPixmap(os.fspath(bundled_asset("mm-toolkit-logo.png")))
         logo.setPixmap(
             pixmap.scaled(
                 300,
@@ -1053,20 +1053,19 @@ class AboutTab(QWidget):
         )
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        title = QLabel("Media Tools for Record Labels")
+        title = QLabel("MM Toolkit")
         title.setFont(QFont("", 22, QFont.Weight.DemiBold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version = QLabel(f"Version {__version__}")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         description = QLabel(
-            "Open-source desktop utilities for generating music videos "
-            "and cutting clips from long recordings."
+            "Audio & Video tools for all"
         )
         description.setWordWrap(True)
         description.setAlignment(Qt.AlignmentFlag.AlignCenter)
         repository = QLabel(
-            '<a href="https://github.com/festanqueiro/record-label-mediatools">'
-            "github.com/festanqueiro/record-label-mediatools</a>"
+            '<a href="https://github.com/festanqueiro/mm-toolkit">'
+            "github.com/festanqueiro/mm-toolkit</a>"
         )
         repository.setOpenExternalLinks(True)
         repository.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1165,8 +1164,8 @@ class MainWindow(QMainWindow):
         self.worker: RenderWorker | None = None
         self.analysis_worker: DropDetectionWorker | None = None
         self.pending_drop_detection = False
-        self.settings = QSettings("Media Tools for Record Labels", "Media Tools for Record Labels")
-        self.setWindowTitle("Media Tools for Record Labels")
+        self.settings = QSettings("MM Toolkit", "MM Toolkit")
+        self.setWindowTitle("MM Toolkit")
         self.setMinimumSize(820, 620)
         self.resize(1100, 820)
 
@@ -1830,9 +1829,9 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("Media Tools for Record Labels")
-    app.setOrganizationName("Media Tools for Record Labels")
-    app.setWindowIcon(QIcon(os.fspath(bundled_asset("media-tools-app-icon.png"))))
+    app.setApplicationName("MM Toolkit")
+    app.setOrganizationName("MM Toolkit")
+    app.setWindowIcon(QIcon(os.fspath(bundled_asset("mm-toolkit-icon.png"))))
     window = MainWindow()
     window.show()
     return app.exec()
