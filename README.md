@@ -47,6 +47,10 @@ Displays the transparent full brand lockup, current application version, open-so
 - Enable or disable completion popups with **Notify when finished**.
 - Customize promo/clip filename templates and choose overwrite, skip, or numbered-copy behavior.
 
+## History tab
+
+Stores up to 20 recent jobs in local OS application settings. Jobs can be loaded back into either tool and their output folder can be reopened. History data is never committed to the repository.
+
 ## Run on macOS during development
 
 Requirements: Python 3.11+. Installing a system FFmpeg is recommended for development; the packaged app can fall back to its bundled media binary.
