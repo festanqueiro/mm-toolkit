@@ -27,13 +27,11 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QLayout,
     QListWidget,
     QMainWindow,
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QScrollArea,
     QSlider,
     QSpinBox,
     QTabWidget,
@@ -108,17 +106,6 @@ def section_group(title: str, content_layout) -> QGroupBox:  # noqa: ANN001
         "}"
     )
     return group
-
-
-def scrollable(content: QWidget) -> QScrollArea:
-    """Keep dense feature screens readable instead of compressing their controls."""
-    if content.layout() is not None:
-        content.layout().setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
-    area = QScrollArea()
-    area.setWidgetResizable(True)
-    area.setFrameShape(QFrame.Shape.NoFrame)
-    area.setWidget(content)
-    return area
 
 
 class RenderWorker(QThread):
@@ -274,7 +261,7 @@ class ClipsTab(QWidget):
         self.player_audio = QAudioOutput(self)
         self.player.setAudioOutput(self.player_audio)
         self.video_preview = QVideoWidget()
-        self.video_preview.setMinimumHeight(210)
+        self.video_preview.setMinimumHeight(170)
         self.player.setVideoOutput(self.video_preview)
         self.play_button = QPushButton("▶ Play")
         self.play_button.setEnabled(False)
@@ -309,7 +296,7 @@ class ClipsTab(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.table.setMinimumHeight(170)
+        self.table.setMinimumHeight(150)
         self.add_button = QPushButton("+ Add clip")
         self.add_button.clicked.connect(lambda: self.add_row())
         self.clip_status = QLabel("")
@@ -328,26 +315,35 @@ class ClipsTab(QWidget):
         self.progress_status.hide()
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(12)
+        layout.setContentsMargins(28, 18, 28, 18)
+        layout.setSpacing(10)
         layout.addWidget(title)
         layout.addWidget(subtitle)
         clip_input_layout = QVBoxLayout()
         clip_input_layout.addLayout(input_form)
         clip_input_layout.addWidget(self.video_preview)
-        playback = QHBoxLayout()
-        playback.addWidget(self.play_button)
-        playback.addWidget(self.timeline, 1)
-        playback.addWidget(self.time_label)
-        playback.addWidget(self.set_start_button)
-        playback.addWidget(self.set_end_button)
-        clip_input_layout.addLayout(playback)
-        clip_input_layout.addWidget(QLabel("Clip timestamps"))
-        clip_input_layout.addWidget(self.table)
-        clip_input_layout.addWidget(self.add_button)
-        clip_input_layout.addWidget(self.clip_status)
-        layout.addWidget(section_group("Input", clip_input_layout))
-        layout.addWidget(section_group("Output", output_form))
+        timeline_row = QHBoxLayout()
+        timeline_row.addWidget(self.timeline, 1)
+        timeline_row.addWidget(self.time_label)
+        clip_input_layout.addLayout(timeline_row)
+        playback_actions = QHBoxLayout()
+        playback_actions.addWidget(self.play_button)
+        playback_actions.addStretch()
+        playback_actions.addWidget(self.set_start_button)
+        playback_actions.addWidget(self.set_end_button)
+        clip_input_layout.addLayout(playback_actions)
+        timestamps_layout = QVBoxLayout()
+        timestamps_layout.addWidget(self.table)
+        timestamps_layout.addWidget(self.add_button)
+        timestamps_layout.addWidget(self.clip_status)
+        right_column = QVBoxLayout()
+        right_column.addWidget(section_group("Clip timestamps", timestamps_layout), 1)
+        right_column.addWidget(section_group("Output", output_form))
+        feature_columns = QHBoxLayout()
+        feature_columns.setSpacing(14)
+        feature_columns.addWidget(section_group("Input", clip_input_layout), 1)
+        feature_columns.addLayout(right_column, 1)
+        layout.addLayout(feature_columns, 1)
         layout.addWidget(self.progress_status)
         layout.addWidget(self.progress)
         actions = QHBoxLayout()
@@ -773,6 +769,9 @@ class MainWindow(QMainWindow):
         self.music_status = QLabel("Choose an audio file or folder.")
         self.cover_status = QLabel("Choose artwork.")
         self.output_status = QLabel("Choose an export folder.")
+        self.music_status.setWordWrap(True)
+        self.cover_status.setWordWrap(True)
+        self.output_status.setWordWrap(True)
         self.artwork_preview = QLabel("Artwork preview")
         self.artwork_preview.setFixedSize(104, 104)
         self.artwork_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -875,10 +874,18 @@ class MainWindow(QMainWindow):
         layout.setSpacing(14)
         layout.addWidget(title)
         layout.addWidget(subtitle)
-        layout.addSpacing(8)
-        layout.addWidget(section_group("Input", input_form))
-        layout.addWidget(section_group("Post-Effects", effects_form))
-        layout.addWidget(section_group("Output", output_form))
+        feature_columns = QHBoxLayout()
+        feature_columns.setSpacing(14)
+        input_column = QVBoxLayout()
+        input_column.addWidget(section_group("Input", input_form))
+        input_column.addStretch()
+        settings_column = QVBoxLayout()
+        settings_column.addWidget(section_group("Post-Effects", effects_form))
+        settings_column.addWidget(section_group("Output", output_form))
+        settings_column.addStretch()
+        feature_columns.addLayout(input_column, 1)
+        feature_columns.addLayout(settings_column, 1)
+        layout.addLayout(feature_columns, 1)
         layout.addWidget(divider)
         layout.addWidget(self.progress_status)
         layout.addWidget(self.progress)
@@ -894,11 +901,11 @@ class MainWindow(QMainWindow):
         self.history = HistoryTab(self.settings)
         self.about = AboutTab()
         self.tabs = QTabWidget()
-        self.tabs.addTab(scrollable(container), "Promo Videos")
-        self.tabs.addTab(scrollable(self.clips), "Livestream Clips")
-        self.tabs.addTab(scrollable(self.history), "History")
-        self.tabs.addTab(scrollable(self.app_settings), "Settings")
-        self.tabs.addTab(scrollable(self.about), "About")
+        self.tabs.addTab(container, "Promo Videos")
+        self.tabs.addTab(self.clips, "Livestream Clips")
+        self.tabs.addTab(self.history, "History")
+        self.tabs.addTab(self.app_settings, "Settings")
+        self.tabs.addTab(self.about, "About")
         self.setCentralWidget(self.tabs)
 
         self.music.changed.connect(self.validate)
