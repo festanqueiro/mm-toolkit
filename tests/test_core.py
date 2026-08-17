@@ -6,7 +6,7 @@ import cv2
 from PIL import Image
 import soundfile as sf
 
-from media_tools_for_record_labels.core import (
+from mm_toolkit.core import (
     AUDIO_EXTENSIONS,
     RenderSettings,
     _load_artwork,
@@ -150,8 +150,8 @@ def test_promo_track_options_override_start_and_duration(tmp_path: Path, monkeyp
         captured["start"] = start_time
         captured["duration"] = settings.duration
 
-    monkeypatch.setattr("media_tools_for_record_labels.core.require_ffmpeg", lambda: "ffmpeg")
-    monkeypatch.setattr("media_tools_for_record_labels.core.render_track", fake_render)
+    monkeypatch.setattr("mm_toolkit.core.require_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr("mm_toolkit.core.render_track", fake_render)
     generate_videos(
         [source],
         tmp_path / "cover.png",

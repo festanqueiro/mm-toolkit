@@ -1,12 +1,14 @@
 <p align="center">
-  <img src="assets/Media%20tools%20app%20-%20full%20logo%20no%20bg.png" alt="Media Tools for Record Labels" width="480">
+  <img src="assets/mm-toolkit-logo.png" alt="MM Toolkit" width="360">
 </p>
 
-# Media Tools for Record Labels
+# MM Toolkit
 
-A macOS-first desktop app for recurring record-label video workflows. The application uses a cross-platform Python/Qt codebase so the same UI can be packaged for Windows later.
+**Audio & Video tools for all**
 
-The macOS bundle, Windows executable, and application windows use the rounded platform-style Media Tools icon from `assets/`.
+A cross-platform desktop toolkit for recurring audio and video workflows used by artists, labels, promoters, and creators.
+
+The macOS bundle, Windows executable, and application windows use the MM Toolkit icon from `assets/`.
 Tab icons are bundled from [Google Material Icons](https://fonts.google.com/icons) under the Apache License 2.0; attribution details are in `assets/material-icons/NOTICE.md`.
 
 ## Video Generator tab
@@ -79,7 +81,7 @@ brew install ffmpeg
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m media_tools_for_record_labels
+python -m mm_toolkit
 ```
 
 Rendering large native-resolution images or videos at 24 fps for 60 seconds can be compute-heavy.
@@ -89,7 +91,7 @@ Rendering large native-resolution images or videos at 24 fps for 60 seconds can 
 ```bash
 chmod +x scripts/build_macos.sh
 ./scripts/build_macos.sh
-open "dist/Media Tools for Record Labels.app"
+open "dist/MM Toolkit.app"
 ```
 
 The first unsigned build may need to be opened with Control-click → Open. Distribution to other Macs should add Apple signing and notarization. The build includes `imageio-ffmpeg` as a fallback, while preferring an FFmpeg installation already available on the machine.
@@ -109,12 +111,3 @@ py -m venv .venv
 PyInstaller must build each platform on that platform; a Windows executable cannot be produced reliably from macOS. The release workflow builds the Windows package on a Windows GitHub Actions runner.
 
 Main-branch releases produce both a portable ZIP and an Inno Setup `.exe` installer. Optional signing uses the `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD` repository secrets; credentials are never stored in this public repository.
-
-## Defaults inherited from the original script
-
-- Visual-native output resolution (odd dimensions are reduced by one pixel for H.264 compatibility)
-- 24 fps
-- 60-second snippet
-- Snippet begins 2 seconds before the detected drop
-- 0.5-second audio and video fades
-- H.264 video, AAC audio at 256 kbps

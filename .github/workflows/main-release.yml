@@ -51,7 +51,7 @@ jobs:
         run: python -m pytest -q
 
       - name: Build application
-        run: python -m PyInstaller --noconfirm --clean MediaToolsForRecordLabels.spec
+        run: python -m PyInstaller --noconfirm --clean MMToolkit.spec
 
       - name: Import macOS signing certificate
         if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
@@ -64,15 +64,15 @@ jobs:
           security unlock-keychain -p actions "$RUNNER_TEMP/build.keychain"
           security import "$RUNNER_TEMP/certificate.p12" -k "$RUNNER_TEMP/build.keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k actions "$RUNNER_TEMP/build.keychain"
-          codesign --deep --force --options runtime --timestamp --sign "${{ secrets.MACOS_SIGNING_IDENTITY }}" "dist/Media Tools for Record Labels.app"
+          codesign --deep --force --options runtime --timestamp --sign "${{ secrets.MACOS_SIGNING_IDENTITY }}" "dist/MM Toolkit.app"
 
       - name: Create macOS ZIP
         if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepParent "dist/Media Tools for Record Labels.app" media-tools-for-record-labels-macos.zip
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/MM Toolkit.app" mm-toolkit-macos.zip
 
       - name: Create macOS DMG
         if: runner.os == 'macOS'
-        run: hdiutil create -volname "Media Tools for Record Labels" -srcfolder "dist/Media Tools for Record Labels.app" -ov -format UDZO media-tools-for-record-labels-macos.dmg
+        run: hdiutil create -volname "MM Toolkit" -srcfolder "dist/MM Toolkit.app" -ov -format UDZO mm-toolkit-macos.dmg
 
       - name: Notarize macOS packages
         if: runner.os == 'macOS' && env.APPLE_ID != ''
@@ -80,8 +80,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          xcrun notarytool submit media-tools-for-record-labels-macos.dmg --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
-          xcrun stapler staple media-tools-for-record-labels-macos.dmg
+          xcrun notarytool submit mm-toolkit-macos.dmg --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple mm-toolkit-macos.dmg
 
       - name: Import and sign Windows application
         if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
@@ -92,12 +92,12 @@ jobs:
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\certificate.pfx", [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
           $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $signTool) { throw "Windows signtool.exe was not found." }
-          & $signTool.FullName sign /f "$env:RUNNER_TEMP\certificate.pfx" /p "$env:WINDOWS_CERTIFICATE_PASSWORD" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "dist\Media Tools for Record Labels\Media Tools for Record Labels.exe"
+          & $signTool.FullName sign /f "$env:RUNNER_TEMP\certificate.pfx" /p "$env:WINDOWS_CERTIFICATE_PASSWORD" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "dist\MM Toolkit\MM Toolkit.exe"
 
       - name: Create Windows ZIP
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "dist/Media Tools for Record Labels" -DestinationPath media-tools-for-record-labels-windows.zip
+        run: Compress-Archive -Path "dist/MM Toolkit" -DestinationPath mm-toolkit-windows.zip
 
       - name: Create Windows installer
         if: runner.os == 'Windows'
@@ -106,7 +106,7 @@ jobs:
           choco install innosetup --no-progress -y
           New-Item -ItemType Directory -Force release | Out-Null
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\windows-installer.iss
-          Copy-Item release\media-tools-for-record-labels-windows-setup.exe .
+          Copy-Item release\mm-toolkit-windows-setup.exe .
 
       - name: Sign Windows installer
         if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
@@ -116,16 +116,16 @@ jobs:
         run: |
           $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $signTool) { throw "Windows signtool.exe was not found." }
-          & $signTool.FullName sign /f "$env:RUNNER_TEMP\certificate.pfx" /p "$env:WINDOWS_CERTIFICATE_PASSWORD" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 media-tools-for-record-labels-windows-setup.exe
+          & $signTool.FullName sign /f "$env:RUNNER_TEMP\certificate.pfx" /p "$env:WINDOWS_CERTIFICATE_PASSWORD" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 mm-toolkit-windows-setup.exe
 
       - name: Upload release packages
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ runner.os }}
           path: |
-            media-tools-for-record-labels-*.zip
-            media-tools-for-record-labels-*.dmg
-            media-tools-for-record-labels-*-setup.exe
+            mm-toolkit-*.zip
+            mm-toolkit-*.dmg
+            mm-toolkit-*-setup.exe
           if-no-files-found: error
 
   release:
@@ -147,5 +147,5 @@ jobs:
           gh release create "$TAG" release-files/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Media Tools for Record Labels $TAG" \
+            --title "MM Toolkit $TAG" \
             --generate-notes
