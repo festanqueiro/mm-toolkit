@@ -55,6 +55,8 @@ class RenderSettings:
     fade: float = 0.5
     bass_effect: bool = True
     mute_original_video_audio: bool = True
+    audio_fade: bool = True
+    video_fade: bool = True
     output_size: tuple[int, int] | None = None
     preset: str = "medium"
     crf: int = 18
@@ -407,13 +409,17 @@ def render_track(
             return _radial_blur(frame, float(envelope[index]))
 
         fade = min(settings.fade, actual_duration / 2)
-        music_audio = AudioFadeOut(fade).apply(AudioFadeIn(fade).apply(AudioFileClip(os.fspath(trimmed))))
+        music_audio = AudioFileClip(os.fspath(trimmed))
+        if settings.audio_fade:
+            music_audio = AudioFadeOut(fade).apply(AudioFadeIn(fade).apply(music_audio))
         audio = music_audio
         if visual_clip is not None and visual_clip.audio is not None and not settings.mute_original_video_audio:
             original_audio = AudioLoop(duration=actual_duration).apply(visual_clip.audio)
             audio = CompositeAudioClip([music_audio, original_audio]).with_duration(actual_duration)
         video = VideoClip(make_frame, duration=actual_duration)
-        video = FadeOut(fade).apply(FadeIn(fade).apply(video)).with_audio(audio)
+        if settings.video_fade:
+            video = FadeOut(fade).apply(FadeIn(fade).apply(video))
+        video = video.with_audio(audio)
         # MoviePy otherwise derives a relative temporary-audio filename from the
         # output name. A packaged macOS app can start in its read-only bundle,
         # causing FFmpeg to fail with "Read-only file system" / "Broken pipe".

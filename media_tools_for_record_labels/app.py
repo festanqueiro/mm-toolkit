@@ -1193,6 +1193,10 @@ class MainWindow(QMainWindow):
         )
         self.bass_effect = QCheckBox("Bass-reactive zoom blur")
         self.bass_effect.setChecked(True)
+        self.video_fade = QCheckBox("Fade video in/out")
+        self.video_fade.setChecked(True)
+        self.audio_fade = QCheckBox("Fade audio in/out")
+        self.audio_fade.setChecked(True)
         self.mute_original_video_audio = QCheckBox("Mute original video sound")
         self.mute_original_video_audio.setChecked(True)
         self.mute_original_video_audio.setVisible(False)
@@ -1243,6 +1247,7 @@ class MainWindow(QMainWindow):
         for bitrate in ("128k", "192k", "256k", "320k"):
             self.audio_bitrate.addItem(bitrate, bitrate)
         self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("256k"))
+        self.video_duration_summary = QLabel("Select audio to estimate duration.")
         self.job_summary = QLabel("")
 
         input_form = QFormLayout()
@@ -1263,6 +1268,8 @@ class MainWindow(QMainWindow):
         effects_form = QFormLayout()
         effects_form.setSpacing(12)
         effects_form.addRow("Visual effect", self.bass_effect)
+        effects_form.addRow("Video", self.video_fade)
+        effects_form.addRow("Audio", self.audio_fade)
 
         promo_clips_layout = QVBoxLayout()
         promo_clips_layout.addWidget(self.analysis_status)
@@ -1277,6 +1284,7 @@ class MainWindow(QMainWindow):
         output_form.addRow("Quality (CRF)", self.crf)
         output_form.addRow("Encoding speed", self.encoding_speed)
         output_form.addRow("Audio bitrate", self.audio_bitrate)
+        output_form.addRow("Estimated duration", self.video_duration_summary)
         output_form.addRow("Job estimate", self.job_summary)
 
         divider = QFrame()
@@ -1366,6 +1374,8 @@ class MainWindow(QMainWindow):
             if value and Path(value).exists():
                 row.edit.setText(value)
         self.bass_effect.setChecked(self.settings.value("promo/bass_effect", True, type=bool))
+        self.video_fade.setChecked(self.settings.value("promo/video_fade", True, type=bool))
+        self.audio_fade.setChecked(self.settings.value("promo/audio_fade", True, type=bool))
         self.mute_original_video_audio.setChecked(
             self.settings.value("promo/mute_original_video_audio", True, type=bool)
         )
@@ -1400,6 +1410,8 @@ class MainWindow(QMainWindow):
             self.cover.set_path(record.get("cover", ""))
             self.output.set_path(record.get("output", ""))
             self.bass_effect.setChecked(record.get("bass_effect", True))
+            self.video_fade.setChecked(record.get("video_fade", True))
+            self.audio_fade.setChecked(record.get("audio_fade", True))
             self.mute_original_video_audio.setChecked(record.get("mute_original_video_audio", True))
             self.detect_drop.blockSignals(True)
             self.detect_drop.setChecked(record.get("detect_drop", True))
@@ -1591,10 +1603,21 @@ class MainWindow(QMainWindow):
         self.generate_requirements.setText(action_message)
         self.generate.setToolTip(action_message)
         if track_options:
-            total_seconds = sum(duration for _start, duration in track_options.values())
+            durations = [duration for _start, duration in track_options.values()]
+            total_seconds = sum(durations)
+            shortest = min(durations)
+            longest = max(durations)
+            if abs(shortest - longest) < 0.01:
+                per_video = f"{format_timestamp(shortest)} per video"
+            else:
+                per_video = f"{format_timestamp(shortest)}–{format_timestamp(longest)} per video"
+            self.video_duration_summary.setText(
+                f"{per_video} • {format_timestamp(total_seconds)} combined"
+            )
             free_gb = shutil.disk_usage(output_path).free / 1024**3 if output_ok else 0
-            self.job_summary.setText(f"{len(track_options)} output(s), {total_seconds / 60:.1f} min total • {free_gb:.1f} GB free")
+            self.job_summary.setText(f"{len(track_options)} output(s) • {free_gb:.1f} GB free")
         else:
+            self.video_duration_summary.setText("Select audio to estimate duration.")
             self.job_summary.setText("Select audio to estimate this job.")
         self.generate.setEnabled(ready)
         return ready
@@ -1630,6 +1653,8 @@ class MainWindow(QMainWindow):
         for row in (self.music, self.cover, self.output):
             row.set_enabled(enabled)
         self.bass_effect.setEnabled(enabled)
+        self.video_fade.setEnabled(enabled)
+        self.audio_fade.setEnabled(enabled)
         self.mute_original_video_audio.setEnabled(
             enabled and Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
         )
@@ -1657,6 +1682,8 @@ class MainWindow(QMainWindow):
         self.cover.set_path("")
         self.output.set_path(self.settings.value("general/default_output", ""))
         self.bass_effect.setChecked(True)
+        self.video_fade.setChecked(True)
+        self.audio_fade.setChecked(True)
         self.mute_original_video_audio.setChecked(True)
         self.detect_drop.setChecked(True)
         self.pre_drop.setValue(2.0)
@@ -1670,7 +1697,7 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.progress_status.clear()
         self.progress_status.hide()
-        for key in ("music", "cover", "output", "promo/bass_effect", "promo/mute_original_video_audio", "promo/detect_drop", "promo/pre_drop"):
+        for key in ("music", "cover", "output", "promo/bass_effect", "promo/video_fade", "promo/audio_fade", "promo/mute_original_video_audio", "promo/detect_drop", "promo/pre_drop"):
             self.settings.remove(key)
         self.validate()
 
@@ -1687,12 +1714,16 @@ class MainWindow(QMainWindow):
             pre_drop=self.pre_drop.value(),
             bass_effect=self.bass_effect.isChecked(),
             mute_original_video_audio=self.mute_original_video_audio.isChecked(),
+            video_fade=self.video_fade.isChecked(),
+            audio_fade=self.audio_fade.isChecked(),
             output_size=self.profile.currentData(),
             preset=self.encoding_speed.currentData(),
             crf=self.crf.value(),
             audio_bitrate=self.audio_bitrate.currentData(),
         )
         self.settings.setValue("promo/bass_effect", self.bass_effect.isChecked())
+        self.settings.setValue("promo/video_fade", self.video_fade.isChecked())
+        self.settings.setValue("promo/audio_fade", self.audio_fade.isChecked())
         self.settings.setValue("promo/mute_original_video_audio", self.mute_original_video_audio.isChecked())
         self.settings.setValue("promo/detect_drop", self.detect_drop.isChecked())
         self.settings.setValue("promo/pre_drop", self.pre_drop.value())
@@ -1734,6 +1765,8 @@ class MainWindow(QMainWindow):
             "cover": self.cover.path,
             "output": self.output.path,
             "bass_effect": self.bass_effect.isChecked(),
+            "video_fade": self.video_fade.isChecked(),
+            "audio_fade": self.audio_fade.isChecked(),
             "mute_original_video_audio": self.mute_original_video_audio.isChecked(),
             "detect_drop": self.detect_drop.isChecked(),
             "pre_drop": self.pre_drop.value(),
