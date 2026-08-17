@@ -7,6 +7,7 @@ from PyInstaller.utils.hooks import copy_metadata
 project_root = Path(SPECPATH).resolve()
 package_metadata = copy_metadata("imageio") + copy_metadata("imageio-ffmpeg") + copy_metadata("moviepy")
 brand_assets = [
+    (str(project_root / "assets" / "media-tools-app-icon.png"), "assets"),
     (str(project_root / "assets" / "Media tools app - just logo no bg.png"), "assets"),
     (str(project_root / "assets" / "Media tools app.png"), "assets"),
     (str(project_root / "assets" / "Media tools app - full logo no bg.png"), "assets"),

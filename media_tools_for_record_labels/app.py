@@ -531,7 +531,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Media Tools for Record Labels")
     app.setOrganizationName("Media Tools for Record Labels")
-    app.setWindowIcon(QIcon(os.fspath(bundled_asset("Media tools app - just logo no bg.png"))))
+    app.setWindowIcon(QIcon(os.fspath(bundled_asset("media-tools-app-icon.png"))))
     window = MainWindow()
     window.show()
     return app.exec()
