@@ -1351,7 +1351,7 @@ class MainWindow(QMainWindow):
         self.audio_bitrate = QComboBox()
         for bitrate in ("128k", "192k", "256k", "320k"):
             self.audio_bitrate.addItem(bitrate, bitrate)
-        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("256k"))
+        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("320k"))
         self.video_duration_summary = QLabel("Select audio to estimate duration.")
         self.job_summary = QLabel("")
 
@@ -1876,7 +1876,7 @@ class MainWindow(QMainWindow):
         self.fps.setValue(24)
         self.crf.setValue(18)
         self.encoding_speed.setCurrentIndex(self.encoding_speed.findData("medium"))
-        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("256k"))
+        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("320k"))
         self.progress.setValue(0)
         self.progress.hide()
         self.progress_status.clear()

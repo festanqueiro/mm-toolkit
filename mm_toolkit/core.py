@@ -60,7 +60,7 @@ class RenderSettings:
     output_size: tuple[int, int] | None = None
     preset: str = "medium"
     crf: int = 18
-    audio_bitrate: str = "256k"
+    audio_bitrate: str = "320k"
 
 
 @dataclass(frozen=True)
