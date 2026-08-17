@@ -6,7 +6,7 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 
 ## Promo Videos tab
 
-- Pick a music folder and immediately verify how many supported files it contains.
+- Pick one audio file or a folder and immediately verify the supported files found.
 - Supports WAV, AIFF, FLAC, MP3, M4A, AAC, and OGG input through FFmpeg.
 - Pick and validate PNG, JPEG, WebP, or TIFF artwork.
 - Pick a writable export folder.

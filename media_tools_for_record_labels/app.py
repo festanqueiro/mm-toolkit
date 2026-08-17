@@ -141,10 +141,17 @@ class PathRow(QWidget):
         self.edit.setPlaceholderText("Nothing selected")
         self.button = QPushButton("Choose…")
         self.button.clicked.connect(self.choose)
+        self.directory_button: QPushButton | None = None
+        if self.mode == "file_or_directory":
+            self.button.setText("Choose File…")
+            self.directory_button = QPushButton("Choose Folder…")
+            self.directory_button.clicked.connect(self.choose_directory)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.edit, 1)
         layout.addWidget(self.button)
+        if self.directory_button:
+            layout.addWidget(self.directory_button)
 
     @property
     def path(self) -> str:
@@ -156,15 +163,24 @@ class PathRow(QWidget):
 
     def choose(self) -> None:
         start = self.path or str(Path.home())
-        if self.mode == "file":
+        if self.mode in {"file", "file_or_directory"}:
             selected, _ = QFileDialog.getOpenFileName(self, self.dialog_title, start, self.file_filter)
         else:
             selected = QFileDialog.getExistingDirectory(self, self.dialog_title, start)
         if selected:
             self.set_path(selected)
 
+    def choose_directory(self) -> None:
+        current = Path(self.path).expanduser() if self.path else Path.home()
+        start = current.parent if current.is_file() else current
+        selected = QFileDialog.getExistingDirectory(self, "Choose folder containing audio", os.fspath(start))
+        if selected:
+            self.set_path(selected)
+
     def set_enabled(self, enabled: bool) -> None:
         self.button.setEnabled(enabled)
+        if self.directory_button:
+            self.directory_button.setEnabled(enabled)
 
 
 class ClipsTab(QWidget):
@@ -495,14 +511,18 @@ class MainWindow(QMainWindow):
         subtitle = QLabel("Turn audio and cover artwork into promo videos at the artwork's native resolution.")
         subtitle.setWordWrap(True)
 
-        self.music = PathRow("Choose folder containing music", "directory")
+        self.music = PathRow(
+            "Choose audio file or folder",
+            "file_or_directory",
+            "Audio (*.wav *.wave *.aif *.aiff *.flac *.mp3 *.m4a *.aac *.ogg)",
+        )
         self.cover = PathRow(
             "Choose cover artwork",
             "file",
             "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff)",
         )
         self.output = PathRow("Choose export folder", "directory")
-        self.music_status = QLabel("Choose a music folder.")
+        self.music_status = QLabel("Choose an audio file or folder.")
         self.cover_status = QLabel("Choose artwork.")
         self.output_status = QLabel("Choose an export folder.")
         self.artwork_preview = QLabel("Artwork preview")
@@ -526,7 +546,7 @@ class MainWindow(QMainWindow):
 
         input_form = QFormLayout()
         input_form.setSpacing(12)
-        input_form.addRow("Music folder", self.music)
+        input_form.addRow("Audio", self.music)
         input_form.addRow("", self.music_status)
         artwork_row = QWidget()
         artwork_layout = QHBoxLayout(artwork_row)
@@ -621,7 +641,7 @@ class MainWindow(QMainWindow):
         self.music_status.setText(
             f"✓ Found {len(tracks)} supported audio file{'s' if len(tracks) != 1 else ''}."
             if music_ok
-            else "No supported audio files found (WAV, AIFF, FLAC, MP3, M4A, AAC, OGG)."
+            else "Choose a supported audio file or a folder containing audio (WAV, AIFF, FLAC, MP3, M4A, AAC, OGG)."
         )
         cover_ok, cover_message = validate_cover(self.cover.path)
         self.cover_status.setText(("✓ " if cover_ok else "") + cover_message)

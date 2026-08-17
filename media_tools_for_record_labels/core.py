@@ -92,6 +92,8 @@ def validate_video(path: str | Path) -> tuple[bool, str]:
 
 def find_audio_files(folder: str | Path) -> list[Path]:
     path = Path(folder).expanduser()
+    if path.is_file():
+        return [path] if path.suffix.lower() in AUDIO_EXTENSIONS else []
     if not path.is_dir():
         return []
     return sorted(

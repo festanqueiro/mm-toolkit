@@ -56,6 +56,15 @@ def test_find_audio_files_is_filtered_and_sorted(tmp_path: Path) -> None:
     assert ".aiff" in AUDIO_EXTENSIONS
 
 
+def test_find_audio_files_accepts_one_audio_file(tmp_path: Path) -> None:
+    audio = tmp_path / "single.flac"
+    audio.touch()
+    unsupported = tmp_path / "notes.txt"
+    unsupported.touch()
+    assert find_audio_files(audio) == [audio]
+    assert find_audio_files(unsupported) == []
+
+
 def test_media_validation(tmp_path: Path) -> None:
     cover = tmp_path / "cover.png"
     Image.new("RGB", (8, 8), "blue").save(cover)
