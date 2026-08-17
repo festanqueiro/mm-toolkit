@@ -1643,17 +1643,38 @@ class MainWindow(QMainWindow):
             duration.setValue(old_duration)
             duration.valueChanged.connect(self.validate)
             preview = QPushButton("▶ Listen")
-            preview.setToolTip("Listen to this clip using its Start and Duration values")
             preview.clicked.connect(
                 lambda _checked=False, row=row, button=preview: self.toggle_promo_preview(row, button)
             )
             self.promo_tracks.setCellWidget(row, 1, start)
             self.promo_tracks.setCellWidget(row, 2, duration)
             self.promo_tracks.setCellWidget(row, 3, preview)
+            start.textChanged.connect(lambda _text, row=row: self.on_promo_timing_changed(row))
+            duration.valueChanged.connect(lambda _value, row=row: self.on_promo_timing_changed(row))
+            self.update_promo_preview_button(row)
         self.analysis_status.setText(
             "Edit start times manually or use ✨ to detect a drop for one track."
             if tracks
             else ""
+        )
+
+    def on_promo_timing_changed(self, row: int) -> None:
+        preview = self.promo_tracks.cellWidget(row, 3)
+        if preview is self.promo_preview_button:
+            self.stop_promo_preview()
+        self.update_promo_preview_button(row)
+
+    def update_promo_preview_button(self, row: int) -> None:
+        start = self.promo_tracks.cellWidget(row, 1)
+        duration = self.promo_tracks.cellWidget(row, 2)
+        preview = self.promo_tracks.cellWidget(row, 3)
+        if not isinstance(start, DropStartField) or not isinstance(duration, QDoubleSpinBox):
+            return
+        if not isinstance(preview, QPushButton):
+            return
+        preview.setText("▶ Listen")
+        preview.setToolTip(
+            f"Listen from {start.text() or 'the start time'} for {duration.value():g} seconds"
         )
 
     def toggle_promo_preview(self, row: int, button: QPushButton) -> None:
