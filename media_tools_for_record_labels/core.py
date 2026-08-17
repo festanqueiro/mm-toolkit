@@ -122,7 +122,7 @@ def validate_video(path: str | Path) -> tuple[bool, str]:
     if not source.is_file():
         return False, "Choose a source video."
     if source.suffix.lower() not in VIDEO_EXTENSIONS:
-        return False, "Choose an MP4, MOV, M4V, MKV, AVI, or WebM video."
+        return False, "The selected file is not a supported video."
     return True, "Source video ready."
 
 
@@ -143,7 +143,7 @@ def validate_cover(path: str | Path) -> tuple[bool, str]:
     if not cover.is_file():
         return False, "Choose an artwork image."
     if cover.suffix.lower() not in IMAGE_EXTENSIONS:
-        return False, "Artwork must be PNG, JPG, WebP, or TIFF."
+        return False, "The selected file is not a supported image."
     try:
         with Image.open(cover) as image:
             image.verify()
@@ -164,7 +164,7 @@ def validate_visual(path: str | Path) -> tuple[bool, str]:
         readable, _frame = capture.read()
         capture.release()
         return (True, "Video ready.") if readable else (False, "The selected video could not be read.")
-    return False, "Choose a PNG, JPG, WebP, TIFF, MP4, MOV, M4V, MKV, AVI, or WebM file."
+    return False, "Choose a supported image or video."
 
 
 def media_kind(path: str | Path) -> str | None:

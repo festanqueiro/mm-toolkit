@@ -840,7 +840,7 @@ class ConverterTab(QWidget):
         elif mixed:
             input_message = "Choose audio files or video files in one batch—not both."
         elif kind is None:
-            input_message = "One or more selected files are missing or unsupported."
+            input_message = "One or more selected files cannot be used."
         else:
             input_message = f"✓ {len(sources)} {kind} file{'s' if len(sources) != 1 else ''} ready."
         self.input_status.setText(input_message)
@@ -1561,9 +1561,9 @@ class MainWindow(QMainWindow):
         tracks = find_audio_files(self.music.path)
         music_ok = bool(tracks)
         self.music_status.setText(
-            f"✓ Found {len(tracks)} supported audio file{'s' if len(tracks) != 1 else ''}."
+            f"✓ Found {len(tracks)} audio file{'s' if len(tracks) != 1 else ''}."
             if music_ok
-            else "Choose a supported audio file or a folder containing audio (WAV, AIFF, FLAC, MP3, M4A, AAC, OGG)."
+            else "Choose an audio file or a folder containing audio."
         )
         cover_ok, cover_message = validate_visual(self.cover.path)
         video_visual = Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
@@ -1585,7 +1585,7 @@ class MainWindow(QMainWindow):
         ready = music_ok and cover_ok and output_ok and bool(track_options) and not analysing and self.worker is None
         missing = []
         if not music_ok:
-            missing.append("choose supported audio")
+            missing.append("choose audio")
         if not cover_ok:
             missing.append("choose a valid image or video")
         if not output_ok:
