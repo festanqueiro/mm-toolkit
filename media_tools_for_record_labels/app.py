@@ -1332,7 +1332,7 @@ class MainWindow(QMainWindow):
         self.promo_input_group = section_group("Input", input_form)
         self.promo_input_group.setMinimumHeight(250)
         input_column.addWidget(self.promo_input_group)
-        self.promo_clips_group = section_group("Clips timestamps", promo_clips_layout)
+        self.promo_clips_group = section_group("Audio timestamps", promo_clips_layout)
         input_column.addWidget(self.promo_clips_group, 1)
         input_column.addStretch()
         settings_column = QVBoxLayout()
