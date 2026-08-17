@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/Media%20tools%20app%20-%20full%20logo%20no%20bg.png" alt="Media Tools for Record Labels" width="480">
+</p>
+
 # Media Tools for Record Labels
 
 A macOS-first desktop app for recurring record-label video workflows. The application uses a cross-platform Python/Qt codebase so the same UI can be packaged for Windows later.
