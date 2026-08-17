@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import html
 import json
 import shutil
 import sys
@@ -11,10 +12,11 @@ from pathlib import Path
 from datetime import datetime
 
 import cv2
-from PySide6.QtCore import QByteArray, QSettings, QThread, Qt, QUrl, Signal
+from PySide6.QtCore import QByteArray, QSize, QSettings, QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
@@ -22,6 +24,8 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -37,10 +41,12 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSlider,
+    QSizePolicy,
     QSpinBox,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -52,7 +58,7 @@ from .core import (
     RenderSettings,
     VIDEO_OUTPUT_FORMATS,
     convert_media,
-    cut_video_clips,
+    cut_media_clips,
     detect_drop_starts,
     find_audio_files,
     format_timestamp,
@@ -60,9 +66,30 @@ from .core import (
     media_kind,
     parse_timestamp,
     validate_visual,
+    validate_media_source,
     validate_video,
 )
 from . import __version__
+from .versioning import is_newer_version
+
+
+TIMESTAMP_FIELD_STYLE = (
+    "QLineEdit, QDoubleSpinBox { background-color: palette(base); "
+    "border: 1px solid palette(mid); border-radius: 6px; padding: 5px 9px; "
+    "color: palette(text); }"
+    "QLineEdit:focus, QDoubleSpinBox:focus { border-color: palette(highlight); }"
+)
+TIMESTAMP_BUTTON_STYLE = (
+    "QPushButton, QToolButton { background-color: palette(button); border: 1px solid palette(mid); "
+    "border-radius: 6px; padding: 0 12px; color: palette(button-text); }"
+    "QPushButton:hover, QToolButton:hover { background-color: palette(midlight); }"
+    "QPushButton:pressed, QToolButton:pressed { background-color: palette(mid); }"
+)
+ICON_BUTTON_STYLE = (
+    "QToolButton { background: transparent; border: 0; border-radius: 6px; padding: 6px; }"
+    "QToolButton:hover { background: palette(midlight); }"
+    "QToolButton:pressed { background: palette(mid); }"
+)
 
 
 def open_preview(parent: QWidget, path: str | Path) -> None:
@@ -215,7 +242,7 @@ class ClipWorker(QThread):
 
     def run(self) -> None:
         try:
-            results = cut_video_clips(
+            results = cut_media_clips(
                 self.source,
                 self.clips,
                 self.output,
@@ -278,6 +305,16 @@ class PathRow(QWidget):
         self.edit = QLineEdit()
         self.edit.setReadOnly(True)
         self.edit.setPlaceholderText("Nothing selected")
+        self.edit.setMinimumHeight(36)
+        self.edit.setStyleSheet(
+            "QLineEdit {"
+            "  color: palette(text);"
+            "  background-color: palette(base);"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 6px;"
+            "  padding: 5px 9px;"
+            "}"
+        )
         self.button = QPushButton("Choose…")
         self.button.clicked.connect(self.choose)
         self.directory_button: QPushButton | None = None
@@ -330,73 +367,194 @@ class ClipField(QLineEdit):
         self.focused.emit()
 
 
+class VideoPreviewWidget(QVideoWidget):
+    """Responsive 16:9 preview surface that preserves the source aspect ratio."""
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        return max(220, round(width * 9 / 16))
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(640, 360)
+
+
+class DropStartField(QWidget):
+    """Start-time editor with a per-track drop detection action."""
+
+    textChanged = Signal(str)
+    detect_requested = Signal()
+
+    def __init__(self, value: str):
+        super().__init__()
+        self.edit = QLineEdit(value)
+        self.edit.setMinimumWidth(80)
+        self.edit.setFixedHeight(36)
+        self.edit.setStyleSheet(TIMESTAMP_FIELD_STYLE)
+        self.edit.setPlaceholderText("HH:MM:SS")
+        self.edit.textChanged.connect(self.textChanged)
+        self.detect_button = QToolButton()
+        self.detect_button.setText("✨")
+        self.detect_button.setFixedSize(36, 36)
+        self.detect_button.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
+        self.detect_button.setToolTip("Analyze this track and propose a drop start time")
+        self.detect_button.setAccessibleName("Detect drop for this track")
+        self.detect_button.clicked.connect(self.detect_requested)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addWidget(self.edit, 1)
+        layout.addWidget(self.detect_button)
+
+    def text(self) -> str:
+        return self.edit.text()
+
+    def setText(self, value: str) -> None:  # noqa: N802
+        self.edit.setText(value)
+
+
+class DropDetectionDialog(QDialog):
+    """Confirmation and lead-in selection for per-track drop analysis."""
+
+    def __init__(self, track_name: str, seconds_before: float, parent: QWidget):
+        super().__init__(parent)
+        self.setWindowTitle("Detect drop start")
+        self.setMinimumWidth(420)
+        message = QLabel(
+            f"MM Toolkit will analyze {track_name} and propose a start time based on its main drop."
+        )
+        message.setWordWrap(True)
+        self.seconds_before = QDoubleSpinBox()
+        self.seconds_before.setRange(0.0, 60.0)
+        self.seconds_before.setDecimals(1)
+        self.seconds_before.setSingleStep(0.5)
+        self.seconds_before.setSuffix(" seconds")
+        self.seconds_before.setValue(seconds_before)
+        form = QFormLayout()
+        form.addRow("Start before the drop", self.seconds_before)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Analyze")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(14)
+        layout.addWidget(message)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+
+
 class ClipsTab(QWidget):
     job_completed = Signal(object)
     def __init__(self, settings: QSettings):
         super().__init__()
         self.settings = settings
         self.worker: ClipWorker | None = None
-        title = page_title("Livestream Clips")
+        title = page_title("Media Cutter")
         subtitle = QLabel(
-            "Create precisely timed social clips from a long recording. "
+            "Cut audio or video into precisely timed clips. "
             "Use HH:MM:SS, MM:SS, or seconds. End is optional; duration defaults to 60 seconds."
         )
         subtitle.setWordWrap(True)
         self.source = PathRow(
-            "Choose source video",
+            "Choose source media",
             "file",
-            "Videos (*.mp4 *.mov *.m4v *.mkv *.avi *.webm)",
+            "Media (*.wav *.wave *.aif *.aiff *.flac *.mp3 *.m4a *.aac *.ogg *.mp4 *.mov *.m4v *.mkv *.avi *.webm)",
         )
         self.output = PathRow("Choose clip export folder", "directory")
         self.source_status = QLabel("")
         self.output_status = QLabel("")
-        self.preview_source = QPushButton("▶ Play Source Video")
-        self.preview_source.setEnabled(False)
-        self.preview_source.clicked.connect(lambda: open_preview(self, self.source.path))
         self.player = QMediaPlayer(self)
         self.player_audio = QAudioOutput(self)
         self.player.setAudioOutput(self.player_audio)
-        self.video_preview = QVideoWidget()
-        self.video_preview.setMinimumHeight(170)
+        self.video_preview = VideoPreviewWidget()
+        self.video_preview.setMinimumSize(360, 220)
+        self.video_preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.video_preview.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
+        self.video_preview.hide()
         self.player.setVideoOutput(self.video_preview)
+        self.preview_prime_requested = False
+        self.preview_priming = False
+        self.preview_prime_was_muted = False
+        self.video_preview.videoSink().videoFrameChanged.connect(self.on_preview_frame_changed)
         self.play_button = QPushButton("▶ Play")
         self.play_button.setEnabled(False)
         self.play_button.clicked.connect(self.toggle_playback)
         self.timeline = QSlider(Qt.Orientation.Horizontal)
         self.timeline.setRange(0, 0)
-        self.timeline.sliderMoved.connect(self.player.setPosition)
+        self.timeline.sliderPressed.connect(self.on_timeline_pressed)
+        self.timeline.sliderMoved.connect(self.on_timeline_moved)
+        self.timeline.sliderReleased.connect(self.on_timeline_released)
+        self.timeline_was_playing = False
         self.time_label = QLabel("00:00:00 / 00:00:00")
         self.set_start_button = QPushButton("Set Start")
         self.set_end_button = QPushButton("Set End")
-        self.active_clip_label = QLabel("Editing Clip 1")
-        self.active_clip_label.setStyleSheet("font-weight: 600; color: palette(highlight);")
+        self.active_clip_label = QLabel("Editing: Clip 01")
+        self.active_clip_label.setFixedHeight(32)
+        self.active_clip_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.active_clip_label.setStyleSheet(
+            "QLabel {"
+            "  color: palette(text);"
+            "  padding: 0 6px;"
+            "  font-weight: 600;"
+            "}"
+        )
         self.set_start_button.clicked.connect(lambda: self.set_timestamp(1))
         self.set_end_button.clicked.connect(lambda: self.set_timestamp(2))
         self.player.positionChanged.connect(self.on_player_position)
         self.player.durationChanged.connect(self.on_player_duration)
         self.player.playbackStateChanged.connect(self.on_playback_state)
+        self.player.mediaStatusChanged.connect(self.on_cutter_media_status)
+        self.clip_preview_button: QToolButton | None = None
+        self.clip_preview_start_ms: int | None = None
+        self.clip_preview_end_ms = 0
 
         input_form = QFormLayout()
         input_form.setSpacing(10)
-        input_form.addRow("Source video", self.source)
+        input_form.addRow("Source media", self.source)
         input_form.addRow("", self.source_status)
-        input_form.addRow("Preview", self.preview_source)
 
         output_form = QFormLayout()
         output_form.setSpacing(10)
         output_form.addRow("Export folder", self.output)
         output_form.addRow("", self.output_status)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Title", "Start", "End (optional)", "Duration", ""])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["Title", "Start", "End", "Duration", "", ""])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(46)
+        self.table.setStyleSheet(
+            "QTableWidget {"
+            "  border: 1px solid rgba(127, 127, 127, 0.35);"
+            "  border-radius: 8px;"
+            "  background: palette(base);"
+            "  alternate-background-color: palette(alternate-base);"
+            "  selection-background-color: palette(midlight);"
+            "  selection-color: palette(text);"
+            "}"
+            "QHeaderView::section {"
+            "  background: palette(midlight);"
+            "  color: palette(text);"
+            "  border: 0;"
+            "  border-bottom: 1px solid palette(mid);"
+            "  padding: 9px 8px;"
+            "  font-weight: 700;"
+            "}"
+        )
         self.table.currentCellChanged.connect(self.update_active_clip)
         self.table.horizontalHeader().setStretchLastSection(False)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setMinimumSectionSize(36)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        for column in (1, 2, 3, 4, 5):
+            self.table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+        for column, width in enumerate((110, 82, 82, 70, 42, 42)):
+            self.table.setColumnWidth(column, width)
         self.table.setMinimumHeight(150)
         self.add_button = QPushButton("+ Add clip")
         self.add_button.clicked.connect(lambda: self.add_row())
@@ -429,9 +587,9 @@ class ClipsTab(QWidget):
         timeline_row.addWidget(self.timeline, 1)
         timeline_row.addWidget(self.time_label)
         clip_input_layout.addLayout(timeline_row)
-        clip_input_layout.addWidget(self.active_clip_label)
         playback_actions = QHBoxLayout()
         playback_actions.addWidget(self.play_button)
+        playback_actions.addWidget(self.active_clip_label)
         playback_actions.addStretch()
         playback_actions.addWidget(self.set_start_button)
         playback_actions.addWidget(self.set_end_button)
@@ -441,12 +599,15 @@ class ClipsTab(QWidget):
         timestamps_layout.addWidget(self.add_button)
         timestamps_layout.addWidget(self.clip_status)
         right_column = QVBoxLayout()
-        right_column.addWidget(section_group("Clip timestamps", timestamps_layout), 1)
-        right_column.addWidget(section_group("Output", output_form))
+        self.clip_timestamps_group = section_group("Clip timestamps", timestamps_layout)
+        self.clip_output_group = section_group("Output", output_form)
+        right_column.addWidget(self.clip_timestamps_group, 1)
+        right_column.addWidget(self.clip_output_group)
         feature_columns = QHBoxLayout()
         feature_columns.setSpacing(14)
-        feature_columns.addWidget(section_group("Input", clip_input_layout), 1)
-        feature_columns.addLayout(right_column, 1)
+        self.clip_input_group = section_group("Input", clip_input_layout)
+        feature_columns.addWidget(self.clip_input_group, 5)
+        feature_columns.addLayout(right_column, 4)
         layout.addLayout(feature_columns, 1)
         layout.addWidget(self.progress_status)
         layout.addWidget(self.progress)
@@ -458,12 +619,13 @@ class ClipsTab(QWidget):
         layout.addLayout(actions)
 
         self.source.changed.connect(self.validate)
-        self.source.changed.connect(self.load_video_preview)
+        self.source.changed.connect(self.load_media_preview)
         self.output.changed.connect(self.validate)
         for row, key in ((self.source, "clips/source"), (self.output, "clips/output")):
             value = self.settings.value(key, "")
             if value and Path(value).exists():
                 row.edit.setText(value)
+        self.load_media_preview(self.source.path)
         self.add_row()
         self.validate()
 
@@ -477,32 +639,65 @@ class ClipsTab(QWidget):
             (3, duration, "60"),
         ):
             edit = ClipField(value)
+            edit.setFixedHeight(38)
+            edit.setStyleSheet(TIMESTAMP_FIELD_STYLE)
             edit.setPlaceholderText(placeholder)
             edit.textChanged.connect(self.validate)
+            if column in (1, 2, 3):
+                edit.textChanged.connect(lambda _text, row=row: self.on_clip_timing_changed(row))
             edit.focused.connect(lambda row=row, column=column: self.table.setCurrentCell(row, column))
             self.table.setCellWidget(row, column, edit)
-        remove = QPushButton("Remove")
+        preview = QToolButton()
+        preview.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
+        preview.setToolTip("Play this clip")
+        preview.setAccessibleName(f"Play clip {row + 1}")
+        preview.setAutoRaise(True)
+        preview.setFixedSize(36, 36)
+        preview.setStyleSheet(ICON_BUTTON_STYLE)
+        preview.clicked.connect(
+            lambda _checked=False, button=preview: self.toggle_clip_preview_button(button)
+        )
+        self.table.setCellWidget(row, 4, preview)
+        remove = QToolButton()
+        remove.setIcon(material_icon("delete", self.palette().color(QPalette.ColorRole.Text).name()))
+        remove.setToolTip("Remove this clip")
+        remove.setAccessibleName(f"Remove clip {row + 1}")
+        remove.setAutoRaise(True)
+        remove.setFixedSize(36, 36)
+        remove.setStyleSheet(ICON_BUTTON_STYLE)
         remove.clicked.connect(lambda _checked=False, button=remove: self.remove_row(button))
-        self.table.setCellWidget(row, 4, remove)
+        self.table.setCellWidget(row, 5, remove)
         self.table.setCurrentCell(row, 0)
         self.validate()
 
     def update_active_clip(self, current_row: int, _current_column: int, _previous_row: int, _previous_column: int) -> None:
         if current_row < 0:
-            self.active_clip_label.setText("Select a clip to edit")
+            self.active_clip_label.setText("Editing: select a clip")
             return
         title = self.table.cellWidget(current_row, 0).text().strip() or f"Clip {current_row + 1:02d}"
-        self.active_clip_label.setText(f"Editing Clip {current_row + 1}: {title} — Set Start/End updates this row")
+        self.active_clip_label.setText(f"Editing: {title}")
         for row in range(self.table.rowCount()):
-            style = "border: 2px solid palette(highlight); border-radius: 4px;" if row == current_row else ""
             for column in range(self.table.columnCount()):
                 widget = self.table.cellWidget(row, column)
                 if widget:
-                    widget.setStyleSheet(style)
+                    if isinstance(widget, QToolButton):
+                        continue
+                    base_style = (
+                        TIMESTAMP_BUTTON_STYLE
+                        if isinstance(widget, QPushButton)
+                        else TIMESTAMP_FIELD_STYLE
+                    )
+                    active_style = (
+                        "QPushButton, QLineEdit { background-color: palette(midlight); }"
+                        if row == current_row
+                        else ""
+                    )
+                    widget.setStyleSheet(base_style + active_style)
 
-    def remove_row(self, button: QPushButton) -> None:
+    def remove_row(self, button: QToolButton) -> None:
+        self.stop_clip_preview()
         for row in range(self.table.rowCount()):
-            if self.table.cellWidget(row, 4) is button:
+            if self.table.cellWidget(row, 5) is button:
                 self.table.removeRow(row)
                 break
         if self.table.rowCount() == 0:
@@ -512,48 +707,176 @@ class ClipsTab(QWidget):
     def parsed_clips(self) -> tuple[list[ClipRequest], str]:
         clips: list[ClipRequest] = []
         for row in range(self.table.rowCount()):
-            title_text = self.table.cellWidget(row, 0).text().strip()
-            start_text = self.table.cellWidget(row, 1).text().strip()
-            end_text = self.table.cellWidget(row, 2).text().strip()
-            duration_text = self.table.cellWidget(row, 3).text().strip()
-            if not start_text:
-                return [], f"Clip {row + 1}: enter a start timestamp."
             try:
-                start = parse_timestamp(start_text)
-                if end_text:
-                    duration = parse_timestamp(end_text) - start
-                    if duration <= 0:
-                        raise ValueError("End must be later than start.")
-                else:
-                    duration = parse_timestamp(duration_text or "60")
-                    if duration <= 0:
-                        raise ValueError("Duration must be greater than zero.")
+                clips.append(self.clip_request(row))
             except ValueError as exc:
                 return [], f"Clip {row + 1}: {exc}"
-            clips.append(ClipRequest(start, duration, title_text))
         return clips, f"✓ {len(clips)} clip{'s' if len(clips) != 1 else ''} ready."
 
-    def load_video_preview(self, path: str) -> None:
-        valid, _ = validate_video(path)
+    def clip_request(self, row: int) -> ClipRequest:
+        title = self.table.cellWidget(row, 0).text().strip()
+        start_text = self.table.cellWidget(row, 1).text().strip()
+        end_text = self.table.cellWidget(row, 2).text().strip()
+        duration_text = self.table.cellWidget(row, 3).text().strip()
+        if not start_text:
+            raise ValueError("enter a start timestamp.")
+        start = parse_timestamp(start_text)
+        if end_text:
+            duration = parse_timestamp(end_text) - start
+            if duration <= 0:
+                raise ValueError("End must be later than start.")
+        else:
+            duration = parse_timestamp(duration_text or "60")
+            if duration <= 0:
+                raise ValueError("Duration must be greater than zero.")
+        return ClipRequest(start, duration, title)
+
+    def on_clip_timing_changed(self, row: int) -> None:
+        if self.table.cellWidget(row, 4) is self.clip_preview_button:
+            self.stop_clip_preview()
+
+    def toggle_clip_preview(self, row: int, button: QToolButton) -> None:
+        if self.clip_preview_button is button and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.player.pause()
+            return
+        if not validate_media_source(self.source.path)[0]:
+            return
+        try:
+            clip = self.clip_request(row)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Preview unavailable", f"Clip {row + 1}: {exc}")
+            return
+        self.stop_clip_preview()
+        self.table.setCurrentCell(row, 4)
+        self.clip_preview_button = button
+        self.clip_preview_start_ms = round(clip.start * 1000)
+        self.clip_preview_end_ms = round((clip.start + clip.duration) * 1000)
+        button.setIcon(material_icon("stop", self.palette().color(QPalette.ColorRole.Text).name()))
+        button.setToolTip("Stop this clip")
+        if self.player.mediaStatus() in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self.start_clip_preview()
+
+    def toggle_clip_preview_button(self, button: QToolButton) -> None:
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, 4) is button:
+                self.toggle_clip_preview(row, button)
+                return
+
+    def on_cutter_media_status(self, status) -> None:  # noqa: ANN001
+        if status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
+            self.start_clip_preview()
+            if self.preview_prime_requested and self.clip_preview_start_ms is None:
+                self.prime_video_preview()
+
+    def prime_video_preview(self) -> None:
+        if not self.preview_prime_requested or self.preview_priming:
+            return
+        self.preview_prime_requested = False
+        self.preview_priming = True
+        self.preview_prime_was_muted = self.player_audio.isMuted()
+        self.player_audio.setMuted(True)
+        self.player.play()
+
+    def on_preview_frame_changed(self, frame) -> None:  # noqa: ANN001
+        if not self.preview_priming or not frame.isValid():
+            return
+        self.player.pause()
+        self.player_audio.setMuted(self.preview_prime_was_muted)
+        self.preview_priming = False
+        self.play_button.setText("▶ Play")
+
+    def cancel_preview_priming(self) -> None:
+        if self.preview_priming:
+            self.player_audio.setMuted(self.preview_prime_was_muted)
+        self.preview_priming = False
+        self.preview_prime_requested = False
+
+    def start_clip_preview(self) -> None:
+        if self.clip_preview_start_ms is None or self.clip_preview_button is None:
+            return
+        start_ms = self.clip_preview_start_ms
+        self.clip_preview_start_ms = None
+        self.player.setPosition(start_ms)
+        self.player.play()
+
+    def stop_clip_preview(self) -> None:
+        button = self.clip_preview_button
+        self.clip_preview_button = None
+        self.clip_preview_start_ms = None
+        self.clip_preview_end_ms = 0
+        if button:
+            button.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
+            button.setToolTip("Play this clip")
+
+    def load_media_preview(self, path: str) -> None:
+        valid, _ = validate_media_source(path)
+        kind = media_kind(path) if valid else None
+        self.stop_clip_preview()
+        self.cancel_preview_priming()
         self.player.stop()
+        self.preview_prime_requested = kind == "video"
         self.player.setSource(QUrl.fromLocalFile(path) if valid else QUrl())
+        self.video_preview.setVisible(kind == "video")
         self.play_button.setEnabled(valid and self.worker is None)
+        if self.player.mediaStatus() in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self.prime_video_preview()
 
     def toggle_playback(self) -> None:
+        if self.preview_priming:
+            self.player_audio.setMuted(self.preview_prime_was_muted)
+            self.preview_priming = False
+            self.preview_prime_requested = False
+            self.play_button.setText("Pause")
+            return
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         else:
+            self.stop_clip_preview()
             self.player.play()
 
     def on_playback_state(self, state) -> None:  # noqa: ANN001
-        self.play_button.setText("Pause" if state == QMediaPlayer.PlaybackState.PlayingState else "▶ Play")
+        if not self.preview_priming:
+            self.play_button.setText("Pause" if state == QMediaPlayer.PlaybackState.PlayingState else "▶ Play")
+        if state != QMediaPlayer.PlaybackState.PlayingState:
+            self.stop_clip_preview()
 
     def on_player_position(self, position: int) -> None:
         if not self.timeline.isSliderDown():
             self.timeline.setValue(position)
+        self.update_cutter_time_label(position)
+        if self.clip_preview_end_ms and position >= self.clip_preview_end_ms:
+            self.player.pause()
+
+    def update_cutter_time_label(self, position: int) -> None:
         self.time_label.setText(
             f"{format_timestamp(position / 1000)} / {format_timestamp(self.player.duration() / 1000)}"
         )
+
+    def on_timeline_pressed(self) -> None:
+        self.timeline_was_playing = (
+            self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        )
+        if self.timeline_was_playing:
+            self.player.pause()
+        self.stop_clip_preview()
+
+    def on_timeline_moved(self, position: int) -> None:
+        self.player.setPosition(position)
+        self.update_cutter_time_label(position)
+
+    def on_timeline_released(self) -> None:
+        position = self.timeline.value()
+        self.player.setPosition(position)
+        self.update_cutter_time_label(position)
+        if self.timeline_was_playing:
+            self.player.play()
+        self.timeline_was_playing = False
 
     def on_player_duration(self, duration: int) -> None:
         self.timeline.setRange(0, max(0, duration))
@@ -567,13 +890,28 @@ class ClipsTab(QWidget):
         self.table.cellWidget(row, column).setText(format_timestamp(self.player.position() / 1000))
 
     def validate(self) -> bool:
-        source_ok, source_message = validate_video(self.source.path)
+        source_ok, source_message = validate_media_source(self.source.path)
+        kind = media_kind(self.source.path) if source_ok else None
+        media_label = kind.title() if kind else "Media"
+        output_format = "MP4" if kind == "video" else Path(self.source.path).suffix.lstrip(".").upper()
+        if output_format == "WAVE":
+            output_format = "WAV"
+        elif output_format == "AIF":
+            output_format = "AIFF"
+        self.clip_output_group.setTitle(f"{media_label} clip output")
+        self.generate.setText(f"Create {media_label} Clips")
+        downstream_enabled = source_ok and self.worker is None
+        self.clip_timestamps_group.setEnabled(downstream_enabled)
+        self.clip_output_group.setEnabled(downstream_enabled)
         source_status = (("✓ " if source_ok else "") + source_message) if self.source.path else ""
         self.source_status.setText(source_status)
         self.source_status.setVisible(bool(source_status))
         output_path = Path(self.output.path).expanduser() if self.output.path else None
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
-        output_status = "✓ Export folder is writable." if output_ok else "Export folder is not writable." if self.output.path else ""
+        if output_ok and kind:
+            output_status = f"✓ {media_label} clips will be exported as {output_format} files."
+        else:
+            output_status = "Export folder is not writable." if self.output.path else ""
         self.output_status.setText(output_status)
         self.output_status.setVisible(bool(output_status))
         clips, clip_message = self.parsed_clips()
@@ -581,7 +919,7 @@ class ClipsTab(QWidget):
         ready = source_ok and output_ok and bool(clips) and self.worker is None
         missing = []
         if not source_ok:
-            missing.append("choose a valid source video")
+            missing.append("choose valid source media")
         if not clips:
             missing.append(clip_message.rstrip("."))
         if not output_ok:
@@ -594,22 +932,22 @@ class ClipsTab(QWidget):
             action_message = "✓ Ready to create clips."
         self.generate_requirements.setText(action_message)
         self.generate.setToolTip(action_message)
-        self.preview_source.setEnabled(source_ok and self.worker is None)
         self.generate.setEnabled(ready)
         return ready
 
     def set_inputs_enabled(self, enabled: bool) -> None:
         self.source.set_enabled(enabled)
+        downstream_enabled = enabled and validate_media_source(self.source.path)[0]
+        self.clip_timestamps_group.setEnabled(downstream_enabled)
+        self.clip_output_group.setEnabled(downstream_enabled)
         self.output.set_enabled(enabled)
         self.add_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
         self.clear_button.setEnabled(enabled)
-        self.play_button.setEnabled(enabled and bool(self.source.path))
+        self.play_button.setEnabled(enabled and validate_media_source(self.source.path)[0])
         self.timeline.setEnabled(enabled)
         self.set_start_button.setEnabled(enabled)
         self.set_end_button.setEnabled(enabled)
-        if not enabled:
-            self.preview_source.setEnabled(False)
 
     def cancel(self) -> None:
         if self.worker:
@@ -699,7 +1037,7 @@ class ConverterTab(QWidget):
         super().__init__()
         self.settings = settings
         self.worker: ConverterWorker | None = None
-        title = page_title("Converter")
+        title = page_title("Media Converter")
         subtitle = QLabel("Convert batches of audio or video files into another common format.")
         self.files = QListWidget()
         self.files.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -720,7 +1058,7 @@ class ConverterTab(QWidget):
         self.mp3_bitrate.setCurrentIndex(self.mp3_bitrate.findData("320k"))
         self.mp3_bitrate.currentIndexChanged.connect(self.validate)
         self.mp3_bitrate_label = QLabel("MP3 bitrate")
-        self.output = PathRow("Choose converter export folder", "directory")
+        self.output = PathRow("Choose media converter export folder", "directory")
         self.output.changed.connect(self.validate)
         self.output_status = QLabel("")
         self.output_status.setWordWrap(True)
@@ -765,7 +1103,8 @@ class ConverterTab(QWidget):
         columns.setSpacing(14)
         columns.addWidget(section_group("Input", input_layout), 1)
         output_column = QVBoxLayout()
-        output_column.addWidget(section_group("Output", output_form))
+        self.converter_output_group = section_group("Output", output_form)
+        output_column.addWidget(self.converter_output_group)
         output_column.addStretch()
         columns.addLayout(output_column, 1)
         layout.addLayout(columns, 1)
@@ -834,6 +1173,7 @@ class ConverterTab(QWidget):
         sources = self.source_paths()
         kinds = {media_kind(path) for path in sources if path.is_file()}
         kind = next(iter(kinds)) if len(kinds) == 1 and None not in kinds and len(sources) == sum(path.is_file() for path in sources) else None
+        self.converter_output_group.setEnabled(kind is not None and self.worker is None)
         mixed = len(kinds) > 1 or None in kinds
         current_kind = self.output_format.property("media_kind")
         if current_kind != kind:
@@ -880,6 +1220,7 @@ class ConverterTab(QWidget):
     def set_inputs_enabled(self, enabled: bool) -> None:
         self.choose_button.setEnabled(enabled)
         self.files.setEnabled(enabled)
+        self.converter_output_group.setEnabled(enabled and self.output_format.count() > 0)
         self.output_format.setEnabled(enabled)
         self.mp3_bitrate.setEnabled(enabled)
         self.output.set_enabled(enabled)
@@ -990,8 +1331,28 @@ class SettingsTab(QWidget):
         if saved_output and Path(saved_output).is_dir():
             self.default_output.edit.setText(saved_output)
 
+        settings_inputs = (
+            self.default_output.edit,
+            self.default_output.button,
+            self.notify_finished,
+            self.promo_naming,
+            self.clip_naming,
+            self.conflict_policy,
+        )
+        for widget in settings_inputs:
+            widget.setMinimumHeight(42)
+        self.promo_naming.setMinimumWidth(420)
+        self.clip_naming.setMinimumWidth(420)
+        self.conflict_policy.setMinimumWidth(260)
+        input_font = QFont()
+        input_font.setPointSize(14)
+        self.promo_naming.setFont(input_font)
+        self.clip_naming.setFont(input_font)
+        self.conflict_policy.setFont(input_font)
+
         form = QFormLayout()
-        form.setSpacing(12)
+        form.setSpacing(18)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         form.addRow("Default Folder for Export", self.default_output)
         form.addRow("", self.output_status)
         form.addRow("Notifications", self.notify_finished)
@@ -1058,6 +1419,10 @@ class AboutTab(QWidget):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version = QLabel(f"Version {__version__}")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.update_link = QLabel()
+        self.update_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.update_link.setOpenExternalLinks(True)
+        self.update_link.hide()
         description = QLabel(
             "Audio & Video tools for all"
         )
@@ -1083,11 +1448,42 @@ class AboutTab(QWidget):
         layout.addWidget(logo)
         layout.addWidget(title)
         layout.addWidget(version)
+        layout.addWidget(self.update_link)
         layout.addSpacing(10)
         layout.addWidget(description)
         layout.addWidget(repository)
         layout.addWidget(icon_credit)
         layout.addStretch()
+
+        self.update_manager = QNetworkAccessManager(self)
+        request = QNetworkRequest(
+            QUrl("https://api.github.com/repos/festanqueiro/mm-toolkit/releases/latest")
+        )
+        request.setRawHeader(b"Accept", b"application/vnd.github+json")
+        request.setRawHeader(b"User-Agent", b"MM-Toolkit-update-check")
+        reply = self.update_manager.get(request)
+        reply.finished.connect(lambda reply=reply: self.on_update_check_finished(reply))
+
+    def on_update_check_finished(self, reply: QNetworkReply) -> None:
+        try:
+            if reply.error() != QNetworkReply.NetworkError.NoError:
+                return
+            release = json.loads(bytes(reply.readAll()).decode("utf-8"))
+            tag = str(release.get("tag_name", ""))
+            url = str(release.get("html_url", ""))
+            if not url.startswith("https://github.com/festanqueiro/mm-toolkit/releases/"):
+                return
+            if is_newer_version(__version__, tag):
+                display_version = tag.removeprefix("v")
+                self.update_link.setText(
+                    f'<a href="{html.escape(url, quote=True)}">'
+                    f"Download MM Toolkit {html.escape(display_version)}</a>"
+                )
+                self.update_link.show()
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
+            return
+        finally:
+            reply.deleteLater()
 
 
 class HistoryTab(QWidget):
@@ -1128,8 +1524,8 @@ class HistoryTab(QWidget):
         for record in self.records:
             tool = {
                 "promo": "Video Generator",
-                "clips": "Livestream Clips",
-                "converter": "Converter",
+                "clips": "Media Cutter",
+                "converter": "Media Converter",
             }.get(record.get("tool"), "Media Tool")
             source = Path(record.get("source", "")).name or "Unknown input"
             self.jobs.addItem(f"{record.get('created', '')}  •  {tool}  •  {source}")
@@ -1163,7 +1559,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.worker: RenderWorker | None = None
         self.analysis_worker: DropDetectionWorker | None = None
-        self.pending_drop_detection = False
         self.settings = QSettings("MM Toolkit", "MM Toolkit")
         self.setWindowTitle("MM Toolkit")
         self.setMinimumSize(820, 620)
@@ -1190,13 +1585,10 @@ class MainWindow(QMainWindow):
         self.music_status.setWordWrap(True)
         self.cover_status.setWordWrap(True)
         self.output_status.setWordWrap(True)
-        self.artwork_preview = QLabel("Visual preview")
+        self.artwork_preview = QLabel()
         self.artwork_preview.setFixedSize(104, 104)
         self.artwork_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.artwork_preview.setWordWrap(True)
-        self.artwork_preview.setStyleSheet(
-            "QLabel { border: 1px solid palette(mid); border-radius: 8px; padding: 4px; }"
-        )
+        self.artwork_preview.hide()
         self.bass_effect = QCheckBox("Bass-reactive zoom blur")
         self.bass_effect.setChecked(True)
         self.video_fade = QCheckBox("Fade video in/out")
@@ -1208,22 +1600,26 @@ class MainWindow(QMainWindow):
         self.mute_original_video_audio.setVisible(False)
         self.mute_original_video_audio_label = QLabel("Video sound")
         self.mute_original_video_audio_label.setVisible(False)
-        self.detect_drop = QCheckBox("Detect drop automatically")
-        self.detect_drop.setChecked(True)
-        self.pre_drop = QDoubleSpinBox()
-        self.pre_drop.setRange(0.0, 60.0)
-        self.pre_drop.setDecimals(1)
-        self.pre_drop.setSingleStep(0.5)
-        self.pre_drop.setSuffix(" seconds")
-        self.pre_drop.setValue(2.0)
-        self.detect_drop.toggled.connect(self.on_detect_drop_changed)
-        self.pre_drop.editingFinished.connect(self.start_drop_detection)
-        self.promo_tracks = QTableWidget(0, 3)
-        self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration"])
-        self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.promo_tracks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.promo_tracks = QTableWidget(0, 4)
+        self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration", ""])
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self.promo_tracks.setColumnWidth(0, 120)
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.promo_tracks.setColumnWidth(3, 42)
+        self.promo_tracks.horizontalHeader().setMinimumSectionSize(36)
+        self.promo_tracks.verticalHeader().setDefaultSectionSize(44)
         self.promo_tracks.setMinimumHeight(50)
+        self.promo_preview_player = QMediaPlayer(self)
+        self.promo_preview_audio = QAudioOutput(self)
+        self.promo_preview_player.setAudioOutput(self.promo_preview_audio)
+        self.promo_preview_player.positionChanged.connect(self.on_promo_preview_position)
+        self.promo_preview_player.playbackStateChanged.connect(self.on_promo_preview_state)
+        self.promo_preview_player.mediaStatusChanged.connect(self.on_promo_preview_media_status)
+        self.promo_preview_end_ms = 0
+        self.promo_preview_start_ms: int | None = None
+        self.promo_preview_button: QToolButton | None = None
         self.analysis_status = QLabel("")
         self.analysis_status.setWordWrap(True)
         self.profile = QComboBox()
@@ -1252,7 +1648,7 @@ class MainWindow(QMainWindow):
         self.audio_bitrate = QComboBox()
         for bitrate in ("128k", "192k", "256k", "320k"):
             self.audio_bitrate.addItem(bitrate, bitrate)
-        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("256k"))
+        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("320k"))
         self.video_duration_summary = QLabel("Select audio to estimate duration.")
         self.job_summary = QLabel("")
 
@@ -1276,16 +1672,8 @@ class MainWindow(QMainWindow):
         effects_form.addRow("Audio", self.audio_fade)
 
         promo_clips_layout = QVBoxLayout()
-        promo_clips_layout.addWidget(self.analysis_status)
         promo_clips_layout.addWidget(self.promo_tracks, 1)
-        self.timing_options = QWidget()
-        timing_options_form = QFormLayout(self.timing_options)
-        timing_options_form.setContentsMargins(0, 4, 0, 0)
-        timing_options_form.setSpacing(8)
-        timing_options_form.addRow("Automatic start", self.detect_drop)
-        timing_options_form.addRow("Seconds before drop", self.pre_drop)
-        self.timing_options.setVisible(False)
-        promo_clips_layout.addWidget(self.timing_options)
+        promo_clips_layout.addWidget(self.analysis_status)
 
         output_form = QFormLayout()
         output_form.setSpacing(12)
@@ -1361,8 +1749,8 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         icon_color = self.palette().color(QPalette.ColorRole.WindowText).name()
         self.tabs.addTab(container, material_icon("music_video", icon_color), "Video Generator")
-        self.tabs.addTab(self.clips, material_icon("content_cut", icon_color), "Livestream Clips")
-        self.tabs.addTab(self.converter, material_icon("swap_horiz", icon_color), "Converter")
+        self.tabs.addTab(self.clips, material_icon("content_cut", icon_color), "Media Cutter")
+        self.tabs.addTab(self.converter, material_icon("swap_horiz", icon_color), "Media Converter")
         self.tabs.addTab(self.history, material_icon("history", icon_color), "History")
         self.tabs.addTab(self.app_settings, material_icon("settings", icon_color), "Settings")
         self.tabs.addTab(self.about, material_icon("info", icon_color), "About")
@@ -1391,8 +1779,6 @@ class MainWindow(QMainWindow):
         self.mute_original_video_audio.setChecked(
             self.settings.value("promo/mute_original_video_audio", True, type=bool)
         )
-        self.detect_drop.setChecked(self.settings.value("promo/detect_drop", True, type=bool))
-        self.pre_drop.setValue(self.settings.value("promo/pre_drop", 2.0, type=float))
 
     def apply_app_settings(self) -> None:
         default_output = self.settings.value("general/default_output", "")
@@ -1415,9 +1801,6 @@ class MainWindow(QMainWindow):
 
     def load_history_job(self, record: dict) -> None:
         if record.get("tool") == "promo":
-            self.detect_drop.blockSignals(True)
-            self.detect_drop.setChecked(False)
-            self.detect_drop.blockSignals(False)
             self.music.set_path(record.get("source", ""))
             self.cover.set_path(record.get("cover", ""))
             self.output.set_path(record.get("output", ""))
@@ -1425,17 +1808,12 @@ class MainWindow(QMainWindow):
             self.video_fade.setChecked(record.get("video_fade", True))
             self.audio_fade.setChecked(record.get("audio_fade", True))
             self.mute_original_video_audio.setChecked(record.get("mute_original_video_audio", True))
-            self.detect_drop.blockSignals(True)
-            self.detect_drop.setChecked(record.get("detect_drop", True))
-            self.detect_drop.blockSignals(False)
-            self.pre_drop.setValue(record.get("pre_drop", 2.0))
             stored_tracks = {item.get("path"): item for item in record.get("tracks", [])}
             for row in range(self.promo_tracks.rowCount()):
                 path = self.promo_tracks.item(row, 0).data(Qt.ItemDataRole.UserRole)
                 if path in stored_tracks:
                     self.promo_tracks.cellWidget(row, 1).setText(format_timestamp(stored_tracks[path].get("start", 0)))
                     self.promo_tracks.cellWidget(row, 2).setValue(stored_tracks[path].get("duration", 60))
-            self.pre_drop.setEnabled(self.detect_drop.isChecked())
             self.analysis_status.setText("✓ Loaded saved per-track timings.")
             self.fps.setValue(record.get("fps", 24))
             profile = record.get("profile")
@@ -1471,6 +1849,7 @@ class MainWindow(QMainWindow):
         self.validate()
 
     def refresh_promo_tracks(self) -> None:
+        self.stop_promo_preview()
         previous: dict[str, tuple[str, float]] = {}
         for row in range(self.promo_tracks.rowCount()):
             item = self.promo_tracks.item(row, 0)
@@ -1480,7 +1859,6 @@ class MainWindow(QMainWindow):
                     self.promo_tracks.cellWidget(row, 2).value(),
                 )
         tracks = find_audio_files(self.music.path)
-        self.timing_options.setVisible(bool(tracks))
         self.promo_tracks.setRowCount(0)
         for row, track in enumerate(tracks):
             self.promo_tracks.insertRow(row)
@@ -1490,23 +1868,131 @@ class MainWindow(QMainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.promo_tracks.setItem(row, 0, item)
             old_start, old_duration = previous.get(os.fspath(track), ("00:00:00", self.duration.value()))
-            start = QLineEdit(old_start)
-            start.setPlaceholderText("HH:MM:SS")
+            start = DropStartField(old_start)
             start.textChanged.connect(self.validate)
+            start.detect_requested.connect(lambda row=row: self.start_drop_detection(row))
             duration = QDoubleSpinBox()
+            duration.setMinimumWidth(88)
+            duration.setFixedHeight(36)
+            duration.setStyleSheet(TIMESTAMP_FIELD_STYLE)
             duration.setRange(1, 3600)
             duration.setDecimals(1)
             duration.setSuffix(" s")
             duration.setValue(old_duration)
             duration.valueChanged.connect(self.validate)
+            preview = QToolButton()
+            preview.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
+            preview.setAutoRaise(True)
+            preview.setFixedSize(36, 36)
+            preview.setStyleSheet(ICON_BUTTON_STYLE)
+            preview.setAccessibleName(f"Play preview for {track.name}")
+            preview.clicked.connect(
+                lambda _checked=False, row=row, button=preview: self.toggle_promo_preview(row, button)
+            )
             self.promo_tracks.setCellWidget(row, 1, start)
             self.promo_tracks.setCellWidget(row, 2, duration)
-        if tracks and self.detect_drop.isChecked():
-            self.start_drop_detection()
-        elif tracks:
-            self.analysis_status.setText("Manual start times — edit each row as needed.")
-        else:
-            self.analysis_status.clear()
+            self.promo_tracks.setCellWidget(row, 3, preview)
+            start.textChanged.connect(lambda _text, row=row: self.on_promo_timing_changed(row))
+            duration.valueChanged.connect(lambda _value, row=row: self.on_promo_timing_changed(row))
+            self.update_promo_preview_button(row)
+        self.analysis_status.setText(
+            "Edit start times manually or use ✨ to detect a drop for one track."
+            if tracks
+            else ""
+        )
+
+    def on_promo_timing_changed(self, row: int) -> None:
+        preview = self.promo_tracks.cellWidget(row, 3)
+        if preview is self.promo_preview_button:
+            self.stop_promo_preview()
+        self.update_promo_preview_button(row)
+
+    def update_promo_preview_button(self, row: int) -> None:
+        start = self.promo_tracks.cellWidget(row, 1)
+        duration = self.promo_tracks.cellWidget(row, 2)
+        preview = self.promo_tracks.cellWidget(row, 3)
+        if not isinstance(start, DropStartField) or not isinstance(duration, QDoubleSpinBox):
+            return
+        if not isinstance(preview, QToolButton):
+            return
+        preview.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
+        preview.setToolTip(
+            f"Listen from {start.text() or 'the start time'} for {duration.value():g} seconds"
+        )
+
+    def toggle_promo_preview(self, row: int, button: QToolButton) -> None:
+        if (
+            self.promo_preview_button is button
+            and self.promo_preview_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        ):
+            self.stop_promo_preview()
+            return
+
+        item = self.promo_tracks.item(row, 0)
+        if item is None:
+            return
+        try:
+            start_seconds = parse_timestamp(self.promo_tracks.cellWidget(row, 1).text())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Preview unavailable", str(exc))
+            return
+        duration_seconds = self.promo_tracks.cellWidget(row, 2).value()
+        source = Path(item.data(Qt.ItemDataRole.UserRole))
+        if not source.is_file():
+            QMessageBox.warning(self, "Preview unavailable", f"Audio file not found:\n{source}")
+            return
+
+        self.stop_promo_preview()
+        self.promo_preview_button = button
+        self.promo_preview_start_ms = round(start_seconds * 1000)
+        self.promo_preview_end_ms = round((start_seconds + duration_seconds) * 1000)
+        self.promo_preview_player.setSource(QUrl.fromLocalFile(os.fspath(source)))
+        if self.promo_preview_player.mediaStatus() in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self.start_promo_preview_playback()
+        button.setIcon(material_icon("stop", self.palette().color(QPalette.ColorRole.Text).name()))
+        self.analysis_status.setText(
+            f"Listening to {source.name} from {format_timestamp(start_seconds)} for {duration_seconds:g} seconds."
+        )
+
+    def on_promo_preview_media_status(self, status) -> None:  # noqa: ANN001
+        if status in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            self.start_promo_preview_playback()
+
+    def start_promo_preview_playback(self) -> None:
+        if self.promo_preview_start_ms is None or self.promo_preview_button is None:
+            return
+        start_ms = self.promo_preview_start_ms
+        self.promo_preview_start_ms = None
+        self.promo_preview_player.setPosition(start_ms)
+        self.promo_preview_player.play()
+
+    def on_promo_preview_position(self, position: int) -> None:
+        if self.promo_preview_end_ms and position >= self.promo_preview_end_ms:
+            self.stop_promo_preview()
+
+    def on_promo_preview_state(self, state) -> None:  # noqa: ANN001
+        if state == QMediaPlayer.PlaybackState.StoppedState and self.promo_preview_button:
+            self.promo_preview_button.setIcon(
+                material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name())
+            )
+            self.promo_preview_button = None
+            self.promo_preview_start_ms = None
+            self.promo_preview_end_ms = 0
+
+    def stop_promo_preview(self) -> None:
+        button = self.promo_preview_button
+        self.promo_preview_button = None
+        self.promo_preview_start_ms = None
+        self.promo_preview_end_ms = 0
+        self.promo_preview_player.stop()
+        if button:
+            button.setIcon(material_icon("play_arrow", self.palette().color(QPalette.ColorRole.Text).name()))
 
     def promo_track_options(self) -> tuple[dict[Path, tuple[float, float]], str]:
         options: dict[Path, tuple[float, float]] = {}
@@ -1520,58 +2006,63 @@ class MainWindow(QMainWindow):
             options[Path(item.data(Qt.ItemDataRole.UserRole))] = (start, duration)
         return options, f"✓ {len(options)} promo clip{'s' if len(options) != 1 else ''} ready."
 
-    def on_detect_drop_changed(self, checked: bool) -> None:
-        self.pre_drop.setEnabled(checked and self.worker is None)
-        if checked:
-            self.start_drop_detection()
-        else:
-            self.pending_drop_detection = False
-            if self.analysis_worker and self.analysis_worker.isRunning():
-                self.analysis_worker.requestInterruption()
-            for row in range(self.promo_tracks.rowCount()):
-                self.promo_tracks.cellWidget(row, 1).setText("00:00:00")
-            self.analysis_status.setText("Manual start times — edit each row as needed.")
-            self.validate()
-
-    def start_drop_detection(self) -> None:
-        tracks = find_audio_files(self.music.path)
-        if not self.detect_drop.isChecked() or not tracks:
-            return
+    def start_drop_detection(self, row: int) -> None:
         if self.analysis_worker and self.analysis_worker.isRunning():
-            self.pending_drop_detection = True
-            self.analysis_worker.requestInterruption()
             return
-        self.pending_drop_detection = False
-        self.analysis_worker = DropDetectionWorker(tracks, self.pre_drop.value())
+        item = self.promo_tracks.item(row, 0)
+        if item is None:
+            return
+        source = Path(item.data(Qt.ItemDataRole.UserRole))
+        if not source.is_file():
+            QMessageBox.warning(self, "Drop detection unavailable", f"Audio file not found:\n{source}")
+            return
+        saved_lead_in = self.settings.value("promo/drop_lead_in", 2.0, type=float)
+        dialog = DropDetectionDialog(source.name, saved_lead_in, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        seconds_before = dialog.seconds_before.value()
+        self.settings.setValue("promo/drop_lead_in", seconds_before)
+        self.set_drop_buttons_enabled(False)
+        self.analysis_worker = DropDetectionWorker([source], seconds_before)
         self.analysis_worker.progress.connect(lambda _percent, status: self.analysis_status.setText(status + "…"))
         self.analysis_worker.succeeded.connect(self.on_drop_detection_success)
-        self.analysis_worker.failed.connect(lambda message: self.analysis_status.setText(f"Automatic detection failed: {message}. Edit starts manually."))
+        self.analysis_worker.failed.connect(
+            lambda message: self.analysis_status.setText(
+                f"Drop detection failed: {message}. You can still enter the start manually."
+            )
+        )
         self.analysis_worker.finished.connect(self.on_drop_detection_finished)
-        self.analysis_status.setText("Preparing drop detection…")
+        self.analysis_status.setText(f"Analyzing {source.name} for its main drop…")
         self.validate()
         self.analysis_worker.start()
 
     def on_drop_detection_success(self, starts: dict[str, float]) -> None:
-        if not self.detect_drop.isChecked():
-            return
         for row in range(self.promo_tracks.rowCount()):
             path = self.promo_tracks.item(row, 0).data(Qt.ItemDataRole.UserRole)
             if path in starts:
                 self.promo_tracks.cellWidget(row, 1).setText(format_timestamp(starts[path]))
-        self.analysis_status.setText(f"✓ Automatically set {len(starts)} start time{'s' if len(starts) != 1 else ''}.")
+                self.analysis_status.setText(
+                    f"✓ Proposed {format_timestamp(starts[path])} for {Path(path).name}. You can edit or preview it."
+                )
+                break
 
     def on_drop_detection_finished(self) -> None:
         worker = self.analysis_worker
         self.analysis_worker = None
         if worker:
             worker.deleteLater()
-        if self.pending_drop_detection:
-            self.start_drop_detection()
-        else:
-            self.validate()
+        self.set_drop_buttons_enabled(self.worker is None)
+        self.validate()
+
+    def set_drop_buttons_enabled(self, enabled: bool) -> None:
+        for row in range(self.promo_tracks.rowCount()):
+            start_field = self.promo_tracks.cellWidget(row, 1)
+            if isinstance(start_field, DropStartField):
+                start_field.detect_button.setEnabled(enabled)
 
     def validate(self) -> bool:
         tracks = find_audio_files(self.music.path)
+        self.generate.setText("Generate Video" if len(tracks) == 1 else "Generate Videos")
         music_ok = bool(tracks)
         music_status = (
             f"✓ Found {len(tracks)} audio file{'s' if len(tracks) != 1 else ''}."
@@ -1612,7 +2103,7 @@ class MainWindow(QMainWindow):
         if music_ok and not track_options:
             missing.append(track_message.rstrip("."))
         if analysing:
-            missing.append("wait for automatic drop detection")
+            missing.append("wait for drop analysis")
         if self.worker is not None:
             action_message = "Generating videos…"
         elif missing:
@@ -1643,22 +2134,26 @@ class MainWindow(QMainWindow):
 
     def update_artwork_preview(self, cover_ok: bool) -> None:
         if not cover_ok:
-            self.artwork_preview.setPixmap(QPixmap())
-            self.artwork_preview.setText("Visual preview")
+            self.artwork_preview.clear()
+            self.artwork_preview.hide()
             return
         if Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}:
             capture = cv2.VideoCapture(self.cover.path)
             readable, frame = capture.read()
             capture.release()
             if not readable:
-                self.artwork_preview.setText("Video preview unavailable")
+                self.artwork_preview.clear()
+                self.artwork_preview.hide()
                 return
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             height, width, channels = rgb.shape
             pixmap = QPixmap.fromImage(QImage(rgb.data, width, height, channels * width, QImage.Format.Format_RGB888).copy())
         else:
             pixmap = QPixmap(self.cover.path)
-        self.artwork_preview.setText("")
+        if pixmap.isNull():
+            self.artwork_preview.clear()
+            self.artwork_preview.hide()
+            return
         self.artwork_preview.setPixmap(
             pixmap.scaled(
                 94,
@@ -1667,8 +2162,11 @@ class MainWindow(QMainWindow):
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
+        self.artwork_preview.show()
 
     def set_inputs_enabled(self, enabled: bool) -> None:
+        if not enabled:
+            self.stop_promo_preview()
         for row in (self.music, self.cover, self.output):
             row.set_enabled(enabled)
         self.bass_effect.setEnabled(enabled)
@@ -1677,9 +2175,8 @@ class MainWindow(QMainWindow):
         self.mute_original_video_audio.setEnabled(
             enabled and Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
         )
-        self.detect_drop.setEnabled(enabled)
-        self.pre_drop.setEnabled(enabled and self.detect_drop.isChecked())
         self.promo_tracks.setEnabled(enabled)
+        self.set_drop_buttons_enabled(enabled and self.analysis_worker is None)
         for control in (
             self.profile,
             self.fps,
@@ -1697,6 +2194,7 @@ class MainWindow(QMainWindow):
             self.worker.requestInterruption()
 
     def clear(self) -> None:
+        self.stop_promo_preview()
         self.music.set_path("")
         self.cover.set_path("")
         self.output.set_path(self.settings.value("general/default_output", ""))
@@ -1704,19 +2202,17 @@ class MainWindow(QMainWindow):
         self.video_fade.setChecked(True)
         self.audio_fade.setChecked(True)
         self.mute_original_video_audio.setChecked(True)
-        self.detect_drop.setChecked(True)
-        self.pre_drop.setValue(2.0)
         self.profile.setCurrentIndex(0)
         self.duration.setValue(60)
         self.fps.setValue(24)
         self.crf.setValue(18)
         self.encoding_speed.setCurrentIndex(self.encoding_speed.findData("medium"))
-        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("256k"))
+        self.audio_bitrate.setCurrentIndex(self.audio_bitrate.findData("320k"))
         self.progress.setValue(0)
         self.progress.hide()
         self.progress_status.clear()
         self.progress_status.hide()
-        for key in ("music", "cover", "output", "promo/bass_effect", "promo/video_fade", "promo/audio_fade", "promo/mute_original_video_audio", "promo/detect_drop", "promo/pre_drop"):
+        for key in ("music", "cover", "output", "promo/bass_effect", "promo/video_fade", "promo/audio_fade", "promo/mute_original_video_audio"):
             self.settings.remove(key)
         self.validate()
 
@@ -1730,7 +2226,6 @@ class MainWindow(QMainWindow):
         render_settings = RenderSettings(
             fps=self.fps.value(),
             duration=self.duration.value(),
-            pre_drop=self.pre_drop.value(),
             bass_effect=self.bass_effect.isChecked(),
             mute_original_video_audio=self.mute_original_video_audio.isChecked(),
             video_fade=self.video_fade.isChecked(),
@@ -1744,8 +2239,6 @@ class MainWindow(QMainWindow):
         self.settings.setValue("promo/video_fade", self.video_fade.isChecked())
         self.settings.setValue("promo/audio_fade", self.audio_fade.isChecked())
         self.settings.setValue("promo/mute_original_video_audio", self.mute_original_video_audio.isChecked())
-        self.settings.setValue("promo/detect_drop", self.detect_drop.isChecked())
-        self.settings.setValue("promo/pre_drop", self.pre_drop.value())
         self.worker = RenderWorker(
             tracks,
             Path(self.cover.path),
@@ -1787,8 +2280,6 @@ class MainWindow(QMainWindow):
             "video_fade": self.video_fade.isChecked(),
             "audio_fade": self.audio_fade.isChecked(),
             "mute_original_video_audio": self.mute_original_video_audio.isChecked(),
-            "detect_drop": self.detect_drop.isChecked(),
-            "pre_drop": self.pre_drop.value(),
             "tracks": [
                 {"path": os.fspath(path), "start": start, "duration": duration}
                 for path, (start, duration) in track_options.items()
@@ -1824,6 +2315,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Rendering in progress", "Wait for rendering to finish before closing the app.")
             event.ignore()
             return
+        self.stop_promo_preview()
         event.accept()
 
 

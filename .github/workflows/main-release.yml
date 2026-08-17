@@ -47,6 +47,12 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
+      - name: Read application version
+        shell: bash
+        run: |
+          APP_VERSION=$(python -c "from mm_toolkit import __version__; print(__version__)")
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+
       - name: Run tests
         run: python -m pytest -q
 
@@ -68,11 +74,11 @@ jobs:
 
       - name: Create macOS ZIP
         if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepParent "dist/MM Toolkit.app" mm-toolkit-macos.zip
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/MM Toolkit.app" "mm-toolkit-${APP_VERSION}-macos.zip"
 
       - name: Create macOS DMG
         if: runner.os == 'macOS'
-        run: hdiutil create -volname "MM Toolkit" -srcfolder "dist/MM Toolkit.app" -ov -format UDZO mm-toolkit-macos.dmg
+        run: hdiutil create -volname "MM Toolkit ${APP_VERSION}" -srcfolder "dist/MM Toolkit.app" -ov -format UDZO "mm-toolkit-${APP_VERSION}-macos.dmg"
 
       - name: Notarize macOS packages
         if: runner.os == 'macOS' && env.APPLE_ID != ''
@@ -80,8 +86,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          xcrun notarytool submit mm-toolkit-macos.dmg --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
-          xcrun stapler staple mm-toolkit-macos.dmg
+          xcrun notarytool submit "mm-toolkit-${APP_VERSION}-macos.dmg" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "mm-toolkit-${APP_VERSION}-macos.dmg"
 
       - name: Import and sign Windows application
         if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
@@ -97,7 +103,7 @@ jobs:
       - name: Create Windows ZIP
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "dist/MM Toolkit" -DestinationPath mm-toolkit-windows.zip
+        run: Compress-Archive -Path "dist/MM Toolkit" -DestinationPath "mm-toolkit-$env:APP_VERSION-windows.zip"
 
       - name: Create Windows installer
         if: runner.os == 'Windows'
@@ -105,8 +111,8 @@ jobs:
         run: |
           choco install innosetup --no-progress -y
           New-Item -ItemType Directory -Force release | Out-Null
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\windows-installer.iss
-          Copy-Item release\mm-toolkit-windows-setup.exe .
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:APP_VERSION" scripts\windows-installer.iss
+          Copy-Item release\mm-toolkit-windows-setup.exe "mm-toolkit-$env:APP_VERSION-windows-setup.exe"
 
       - name: Sign Windows installer
         if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
@@ -116,7 +122,7 @@ jobs:
         run: |
           $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $signTool) { throw "Windows signtool.exe was not found." }
-          & $signTool.FullName sign /f "$env:RUNNER_TEMP\certificate.pfx" /p "$env:WINDOWS_CERTIFICATE_PASSWORD" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 mm-toolkit-windows-setup.exe
+          & $signTool.FullName sign /f "$env:RUNNER_TEMP\certificate.pfx" /p "$env:WINDOWS_CERTIFICATE_PASSWORD" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "mm-toolkit-$env:APP_VERSION-windows-setup.exe"
 
       - name: Upload release packages
         uses: actions/upload-artifact@v4
@@ -133,6 +139,13 @@ jobs:
     needs: [secret-scan, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Read application version
+        run: |
+          APP_VERSION=$(python -c "from mm_toolkit import __version__; print(__version__)")
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -142,10 +155,9 @@ jobs:
       - name: Create release and attach packages
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: release-${{ github.run_number }}
         run: |
-          gh release create "$TAG" release-files/* \
+          gh release create "v${APP_VERSION}" release-files/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "MM Toolkit $TAG" \
+            --title "MM Toolkit ${APP_VERSION}" \
             --generate-notes
