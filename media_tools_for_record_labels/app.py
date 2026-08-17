@@ -365,12 +365,12 @@ class ClipsTab(QWidget):
         self.add_row()
         self.validate()
 
-    def add_row(self, title: str = "", start: str = "", end: str = "", duration: str = "60") -> None:
+    def add_row(self, title: str = "", start: str = "00:00:00", end: str = "", duration: str = "60") -> None:
         row = self.table.rowCount()
         self.table.insertRow(row)
         for column, value, placeholder in (
             (0, title, f"Clip {row + 1:02d}"),
-            (1, start, "00:03:15"),
+            (1, start, "Required, e.g. 00:03:15"),
             (2, end, "Optional"),
             (3, duration, "60"),
         ):
