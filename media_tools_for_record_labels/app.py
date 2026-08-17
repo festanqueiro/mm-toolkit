@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGroupBox,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -52,6 +53,27 @@ def open_preview(parent: QWidget, path: str | Path) -> None:
 def bundled_asset(name: str) -> Path:
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
     return root / "assets" / name
+
+
+def section_group(title: str, content_layout) -> QGroupBox:  # noqa: ANN001
+    group = QGroupBox(title)
+    group.setLayout(content_layout)
+    group.setStyleSheet(
+        "QGroupBox {"
+        "  font-weight: 600;"
+        "  border: 1px solid rgba(127, 127, 127, 0.28);"
+        "  border-radius: 10px;"
+        "  margin-top: 8px;"
+        "  padding-top: 10px;"
+        "  background-color: rgba(127, 127, 127, 0.06);"
+        "}"
+        "QGroupBox::title {"
+        "  subcontrol-origin: margin;"
+        "  left: 12px;"
+        "  padding: 0 6px;"
+        "}"
+    )
+    return group
 
 
 class RenderWorker(QThread):
@@ -169,13 +191,16 @@ class ClipsTab(QWidget):
         self.preview_source.setEnabled(False)
         self.preview_source.clicked.connect(lambda: open_preview(self, self.source.path))
 
-        form = QFormLayout()
-        form.setSpacing(10)
-        form.addRow("Source video", self.source)
-        form.addRow("", self.source_status)
-        form.addRow("Preview", self.preview_source)
-        form.addRow("Export folder", self.output)
-        form.addRow("", self.output_status)
+        input_form = QFormLayout()
+        input_form.setSpacing(10)
+        input_form.addRow("Source video", self.source)
+        input_form.addRow("", self.source_status)
+        input_form.addRow("Preview", self.preview_source)
+
+        output_form = QFormLayout()
+        output_form.setSpacing(10)
+        output_form.addRow("Export folder", self.output)
+        output_form.addRow("", self.output_status)
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Start", "End (optional)", "Duration", ""])
@@ -203,11 +228,14 @@ class ClipsTab(QWidget):
         layout.setSpacing(12)
         layout.addWidget(title)
         layout.addWidget(subtitle)
-        layout.addLayout(form)
-        layout.addWidget(QLabel("Clip timestamps"))
-        layout.addWidget(self.table)
-        layout.addWidget(self.add_button)
-        layout.addWidget(self.clip_status)
+        clip_input_layout = QVBoxLayout()
+        clip_input_layout.addLayout(input_form)
+        clip_input_layout.addWidget(QLabel("Clip timestamps"))
+        clip_input_layout.addWidget(self.table)
+        clip_input_layout.addWidget(self.add_button)
+        clip_input_layout.addWidget(self.clip_status)
+        layout.addWidget(section_group("Input", clip_input_layout))
+        layout.addWidget(section_group("Output", output_form))
         layout.addWidget(self.progress_status)
         layout.addWidget(self.progress)
         actions = QHBoxLayout()
@@ -438,22 +466,25 @@ class MainWindow(QMainWindow):
         self.pre_drop.setSuffix(" seconds")
         self.pre_drop.setValue(2.0)
 
-        form = QFormLayout()
-        form.setSpacing(12)
-        form.addRow("Music folder", self.music)
-        form.addRow("", self.music_status)
+        input_form = QFormLayout()
+        input_form.setSpacing(12)
+        input_form.addRow("Music folder", self.music)
+        input_form.addRow("", self.music_status)
         artwork_row = QWidget()
         artwork_layout = QHBoxLayout(artwork_row)
         artwork_layout.setContentsMargins(0, 0, 0, 0)
         artwork_layout.addWidget(self.cover, 1)
         artwork_layout.addWidget(self.artwork_preview)
-        form.addRow("Artwork", artwork_row)
-        form.addRow("", self.cover_status)
-        form.addRow("Audio preview", self.preview_audio)
-        form.addRow("Export folder", self.output)
-        form.addRow("", self.output_status)
-        form.addRow("Visual effect", self.bass_effect)
-        form.addRow("Before detected drop", self.pre_drop)
+        input_form.addRow("Artwork", artwork_row)
+        input_form.addRow("", self.cover_status)
+        input_form.addRow("Audio preview", self.preview_audio)
+        input_form.addRow("Visual effect", self.bass_effect)
+        input_form.addRow("Before detected drop", self.pre_drop)
+
+        output_form = QFormLayout()
+        output_form.setSpacing(12)
+        output_form.addRow("Export folder", self.output)
+        output_form.addRow("", self.output_status)
 
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
@@ -477,7 +508,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addSpacing(8)
-        layout.addLayout(form)
+        layout.addWidget(section_group("Input", input_form))
+        layout.addWidget(section_group("Output", output_form))
         layout.addWidget(divider)
         layout.addWidget(self.progress_status)
         layout.addWidget(self.progress)
