@@ -1440,8 +1440,8 @@ class MainWindow(QMainWindow):
         effects_form.addRow("Audio", self.audio_fade)
 
         promo_clips_layout = QVBoxLayout()
-        promo_clips_layout.addWidget(self.analysis_status)
         promo_clips_layout.addWidget(self.promo_tracks, 1)
+        promo_clips_layout.addWidget(self.analysis_status)
 
         output_form = QFormLayout()
         output_form.setSpacing(12)
