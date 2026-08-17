@@ -354,7 +354,7 @@ class DropStartField(QWidget):
     def __init__(self, value: str):
         super().__init__()
         self.edit = QLineEdit(value)
-        self.edit.setFixedHeight(38)
+        self.edit.setFixedSize(150, 38)
         self.edit.setPlaceholderText("HH:MM:SS")
         self.edit.textChanged.connect(self.textChanged)
         self.detect_button = QPushButton("✨")
@@ -1374,9 +1374,10 @@ class MainWindow(QMainWindow):
         self.mute_original_video_audio_label.setVisible(False)
         self.promo_tracks = QTableWidget(0, 4)
         self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration", "Preview"])
-        for column in range(self.promo_tracks.columnCount()):
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column in (1, 2, 3):
             self.promo_tracks.horizontalHeader().setSectionResizeMode(
-                column, QHeaderView.ResizeMode.Stretch
+                column, QHeaderView.ResizeMode.ResizeToContents
             )
         self.promo_tracks.verticalHeader().setDefaultSectionSize(46)
         self.promo_tracks.setMinimumHeight(50)
@@ -1639,14 +1640,14 @@ class MainWindow(QMainWindow):
             start.textChanged.connect(self.validate)
             start.detect_requested.connect(lambda row=row: self.start_drop_detection(row))
             duration = QDoubleSpinBox()
-            duration.setFixedHeight(38)
+            duration.setFixedSize(150, 38)
             duration.setRange(1, 3600)
             duration.setDecimals(1)
             duration.setSuffix(" s")
             duration.setValue(old_duration)
             duration.valueChanged.connect(self.validate)
             preview = QPushButton("▶ Listen")
-            preview.setFixedHeight(38)
+            preview.setFixedSize(150, 38)
             preview.clicked.connect(
                 lambda _checked=False, row=row, button=preview: self.toggle_promo_preview(row, button)
             )
