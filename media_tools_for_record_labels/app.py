@@ -340,7 +340,7 @@ class MainWindow(QMainWindow):
 
         title = QLabel("Promo Videos")
         title.setFont(QFont("", 24, QFont.Weight.DemiBold))
-        subtitle = QLabel("Turn audio masters and cover artwork into promo videos at the artwork's native resolution.")
+        subtitle = QLabel("Turn audio and cover artwork into promo videos at the artwork's native resolution.")
         subtitle.setWordWrap(True)
 
         self.music = PathRow("Choose folder containing music", "directory")
