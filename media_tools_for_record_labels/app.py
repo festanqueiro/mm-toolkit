@@ -478,8 +478,11 @@ class MainWindow(QMainWindow):
         input_form.addRow("Artwork", artwork_row)
         input_form.addRow("", self.cover_status)
         input_form.addRow("Audio preview", self.preview_audio)
-        input_form.addRow("Visual effect", self.bass_effect)
-        input_form.addRow("Before detected drop", self.pre_drop)
+
+        effects_form = QFormLayout()
+        effects_form.setSpacing(12)
+        effects_form.addRow("Visual effect", self.bass_effect)
+        effects_form.addRow("Before detected drop", self.pre_drop)
 
         output_form = QFormLayout()
         output_form.setSpacing(12)
@@ -509,6 +512,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(subtitle)
         layout.addSpacing(8)
         layout.addWidget(section_group("Input", input_form))
+        layout.addWidget(section_group("Post-Effects", effects_form))
         layout.addWidget(section_group("Output", output_form))
         layout.addWidget(divider)
         layout.addWidget(self.progress_status)
