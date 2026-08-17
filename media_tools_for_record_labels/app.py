@@ -10,6 +10,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings, QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPixmap
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -27,6 +29,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSlider,
     QSpinBox,
     QTabWidget,
     QTableWidget,
@@ -40,6 +43,7 @@ from .core import (
     RenderSettings,
     cut_video_clips,
     find_audio_files,
+    format_timestamp,
     generate_videos,
     parse_timestamp,
     validate_cover,
@@ -249,6 +253,26 @@ class ClipsTab(QWidget):
         self.preview_source = QPushButton("▶ Play Source Video")
         self.preview_source.setEnabled(False)
         self.preview_source.clicked.connect(lambda: open_preview(self, self.source.path))
+        self.player = QMediaPlayer(self)
+        self.player_audio = QAudioOutput(self)
+        self.player.setAudioOutput(self.player_audio)
+        self.video_preview = QVideoWidget()
+        self.video_preview.setMinimumHeight(210)
+        self.player.setVideoOutput(self.video_preview)
+        self.play_button = QPushButton("▶ Play")
+        self.play_button.setEnabled(False)
+        self.play_button.clicked.connect(self.toggle_playback)
+        self.timeline = QSlider(Qt.Orientation.Horizontal)
+        self.timeline.setRange(0, 0)
+        self.timeline.sliderMoved.connect(self.player.setPosition)
+        self.time_label = QLabel("00:00:00 / 00:00:00")
+        self.set_start_button = QPushButton("Set Start")
+        self.set_end_button = QPushButton("Set End")
+        self.set_start_button.clicked.connect(lambda: self.set_timestamp(1))
+        self.set_end_button.clicked.connect(lambda: self.set_timestamp(2))
+        self.player.positionChanged.connect(self.on_player_position)
+        self.player.durationChanged.connect(self.on_player_duration)
+        self.player.playbackStateChanged.connect(self.on_playback_state)
 
         input_form = QFormLayout()
         input_form.setSpacing(10)
@@ -293,6 +317,14 @@ class ClipsTab(QWidget):
         layout.addWidget(subtitle)
         clip_input_layout = QVBoxLayout()
         clip_input_layout.addLayout(input_form)
+        clip_input_layout.addWidget(self.video_preview)
+        playback = QHBoxLayout()
+        playback.addWidget(self.play_button)
+        playback.addWidget(self.timeline, 1)
+        playback.addWidget(self.time_label)
+        playback.addWidget(self.set_start_button)
+        playback.addWidget(self.set_end_button)
+        clip_input_layout.addLayout(playback)
         clip_input_layout.addWidget(QLabel("Clip timestamps"))
         clip_input_layout.addWidget(self.table)
         clip_input_layout.addWidget(self.add_button)
@@ -309,6 +341,7 @@ class ClipsTab(QWidget):
         layout.addLayout(actions)
 
         self.source.changed.connect(self.validate)
+        self.source.changed.connect(self.load_video_preview)
         self.output.changed.connect(self.validate)
         for row, key in ((self.source, "clips/source"), (self.output, "clips/output")):
             value = self.settings.value(key, "")
@@ -368,6 +401,39 @@ class ClipsTab(QWidget):
             clips.append(ClipRequest(start, duration, title_text))
         return clips, f"✓ {len(clips)} clip{'s' if len(clips) != 1 else ''} ready."
 
+    def load_video_preview(self, path: str) -> None:
+        valid, _ = validate_video(path)
+        self.player.stop()
+        self.player.setSource(QUrl.fromLocalFile(path) if valid else QUrl())
+        self.play_button.setEnabled(valid and self.worker is None)
+
+    def toggle_playback(self) -> None:
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.player.pause()
+        else:
+            self.player.play()
+
+    def on_playback_state(self, state) -> None:  # noqa: ANN001
+        self.play_button.setText("Pause" if state == QMediaPlayer.PlaybackState.PlayingState else "▶ Play")
+
+    def on_player_position(self, position: int) -> None:
+        if not self.timeline.isSliderDown():
+            self.timeline.setValue(position)
+        self.time_label.setText(
+            f"{format_timestamp(position / 1000)} / {format_timestamp(self.player.duration() / 1000)}"
+        )
+
+    def on_player_duration(self, duration: int) -> None:
+        self.timeline.setRange(0, max(0, duration))
+        self.on_player_position(self.player.position())
+
+    def set_timestamp(self, column: int) -> None:
+        row = self.table.currentRow()
+        if row < 0:
+            row = 0
+            self.table.selectRow(row)
+        self.table.cellWidget(row, column).setText(format_timestamp(self.player.position() / 1000))
+
     def validate(self) -> bool:
         source_ok, source_message = validate_video(self.source.path)
         self.source_status.setText(("✓ " if source_ok else "") + source_message)
@@ -387,6 +453,10 @@ class ClipsTab(QWidget):
         self.add_button.setEnabled(enabled)
         self.table.setEnabled(enabled)
         self.clear_button.setEnabled(enabled)
+        self.play_button.setEnabled(enabled and bool(self.source.path))
+        self.timeline.setEnabled(enabled)
+        self.set_start_button.setEnabled(enabled)
+        self.set_end_button.setEnabled(enabled)
         if not enabled:
             self.preview_source.setEnabled(False)
 
@@ -398,6 +468,7 @@ class ClipsTab(QWidget):
 
     def clear(self) -> None:
         self.source.set_path("")
+        self.player.stop()
         self.output.set_path(self.settings.value("general/default_output", ""))
         self.table.setRowCount(0)
         self.add_row()

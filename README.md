@@ -35,6 +35,7 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 - Play the selected source recording in the system video player before cutting.
 - Clear the source, export folder, timestamps, progress, and saved selections.
 - Give every clip a descriptive title and cancel active clip creation safely.
+- Preview video in the app, scrub the timeline, and set clip start/end from the current playhead.
 
 ## About tab
 
