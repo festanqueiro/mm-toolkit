@@ -6,71 +6,16 @@
 
 **Audio & Video tools for all**
 
-A cross-platform desktop toolkit for recurring audio and video workflows used by artists, labels, promoters, and creators.
+Create and prepare music content from one desktop app.
 
-The macOS bundle, Windows executable, and application windows use the MM Toolkit icon from `assets/`.
-Tab icons are bundled from [Google Material Icons](https://fonts.google.com/icons) under the Apache License 2.0; attribution details are in `assets/material-icons/NOTICE.md`.
+Available for macOS and Windows.
 
-## Video Generator tab
+## Features
 
-- Pick one audio file or a folder and immediately verify the supported files found.
-- Supports WAV, AIFF, FLAC, MP3, M4A, AAC, and OGG input through FFmpeg.
-- Pick and validate a PNG, JPEG, WebP, or TIFF image, or an MP4, MOV, M4V, MKV, AVI, or WebM video.
-- Pick a writable export folder.
-- Generate one H.264/AAC MP4 per track at the visual's native dimensions and aspect ratio.
-- Loop video visuals when they are shorter than the selected audio clip.
-- Mute the original video's sound by default, or keep it and mix it with the selected music by clearing **Mute original video sound**.
-- Keep the UI responsive and show current-track and overall rendering progress.
-- Remember the last selected paths.
-- Detect the main bass-energy drop and animate the original punchy zoom-blur effect.
-- Turn the bass-reactive zoom blur on or off; when off, the selected image or video is preserved without that effect.
-- Enable or disable video and audio fade-in/fade-out independently.
-- Add one promo row per detected audio file and edit each track's start time and duration independently.
-- Enable automatic drop detection to populate every start time using a configurable lead-in (default: 2 seconds), or disable it for manual starts.
-- See an inline thumbnail of the selected image or the first frame of the selected video.
-- Clear the complete form and saved selections to start fresh.
-- Choose visual-native, vertical, square, or landscape output profiles.
-- Configure per-track duration plus shared frame rate, CRF quality, encoding speed, and audio bitrate.
-- Cancel active rendering safely; partial outputs are removed.
-- Review job size/duration estimates before starting.
-- See the estimated per-video and combined output duration in Output.
-
-## Livestream Clips tab
-
-- Pick a long MP4, MOV, M4V, MKV, AVI, or WebM recording.
-- Add as many clip rows as needed.
-- Enter timestamps as `HH:MM:SS`, `MM:SS`, or plain seconds.
-- Give each clip a start plus either an optional end or a duration.
-- Default duration is 60 seconds for Instagram-style clips.
-- Export accurately timed, broadly compatible H.264/AAC MP4 files.
-- Follow overall FFmpeg progress while clips are rendered.
-- Play the selected source recording in the system video player before cutting.
-- Clear the source, export folder, timestamps, progress, and saved selections.
-- Give every clip a descriptive title and cancel active clip creation safely.
-- Preview video in the app, scrub the timeline, and set clip start/end from the current playhead.
-
-## Converter tab
-
-- Select one or many audio files and convert them to MP3, WAV, AIFF, FLAC, M4A, AAC, or OGG.
-- Choose 128, 192, 256, or 320 kbps when MP3 is the selected output format.
-- Select one or many video files and convert them to MP4, MOV, MKV, AVI, or WebM.
-- Automatically detect audio versus video and prevent incompatible mixed batches.
-- Preview selected inputs, choose a writable export folder, follow progress, and cancel safely.
-- Preserve original filenames while applying the shared overwrite, skip, or numbered-copy policy.
-
-## About tab
-
-Displays the transparent full brand lockup, current application version, open-source description, and GitHub repository link.
-
-## Settings tab
-
-- Choose a default export folder shared by all tools.
-- Enable or disable completion popups with **Notify when finished**.
-- Customize promo/clip filename templates and choose overwrite, skip, or numbered-copy behavior.
-
-## History tab
-
-Stores up to 20 recent jobs in local OS application settings. Jobs can be loaded back into their tool and their output folder can be reopened. History data is never committed to the repository.
+- **Video Generator:** turn audio plus artwork or video into ready-to-share MP4s, with editable timestamps, clip listening, drop detection, visual effects, fades, and multiple aspect ratios.
+- **Media Cutter:** preview audio or video, mark precise start/end points, and export multiple titled clips.
+- **Media Converter:** batch-convert common audio and video formats with progress tracking and safe cancellation.
+- **Workflow tools:** shared export settings, filename templates, overwrite controls, recent-job history, and update notifications.
 
 ## Run on macOS during development
 
@@ -97,6 +42,8 @@ open "dist/MM Toolkit.app"
 The first unsigned build may need to be opened with Control-click → Open. Distribution to other Macs should add Apple signing and notarization. The build includes `imageio-ffmpeg` as a fallback, while preferring an FFmpeg installation already available on the machine.
 
 Main-branch releases produce both a ZIP and native DMG. When macOS certificate/notarization secrets are configured, the release workflow signs and notarizes the app without storing credentials in the repository.
+
+Release tags and package filenames use semantic versions from `mm_toolkit.__version__`, starting at `v1.0.0`. Update that single value before publishing a new release.
 
 ## Windows path
 

@@ -1,5 +1,7 @@
 #define AppName "MM Toolkit"
+#ifndef AppVersion
 #define AppVersion "1.0.0"
+#endif
 #define AppPublisher "MM Toolkit"
 #define AppExeName "MM Toolkit.exe"
 
