@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -77,10 +78,10 @@ TIMESTAMP_FIELD_STYLE = (
     "QLineEdit:focus, QDoubleSpinBox:focus { border-color: palette(highlight); }"
 )
 TIMESTAMP_BUTTON_STYLE = (
-    "QPushButton { background-color: palette(button); border: 1px solid palette(mid); "
+    "QPushButton, QToolButton { background-color: palette(button); border: 1px solid palette(mid); "
     "border-radius: 6px; padding: 0 12px; color: palette(button-text); }"
-    "QPushButton:hover { background-color: palette(midlight); }"
-    "QPushButton:pressed { background-color: palette(mid); }"
+    "QPushButton:hover, QToolButton:hover { background-color: palette(midlight); }"
+    "QPushButton:pressed, QToolButton:pressed { background-color: palette(mid); }"
 )
 
 
@@ -368,12 +369,14 @@ class DropStartField(QWidget):
     def __init__(self, value: str):
         super().__init__()
         self.edit = QLineEdit(value)
-        self.edit.setFixedSize(150, 38)
+        self.edit.setMinimumWidth(80)
+        self.edit.setFixedHeight(36)
         self.edit.setStyleSheet(TIMESTAMP_FIELD_STYLE)
         self.edit.setPlaceholderText("HH:MM:SS")
         self.edit.textChanged.connect(self.textChanged)
-        self.detect_button = QPushButton("✨")
-        self.detect_button.setFixedSize(38, 38)
+        self.detect_button = QToolButton()
+        self.detect_button.setText("✨")
+        self.detect_button.setFixedSize(36, 36)
         self.detect_button.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
         self.detect_button.setToolTip("Analyze this track and propose a drop start time")
         self.detect_button.setAccessibleName("Detect drop for this track")
@@ -1412,11 +1415,11 @@ class MainWindow(QMainWindow):
         self.promo_tracks = QTableWidget(0, 4)
         self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration", "Preview"])
         self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for column in (1, 2, 3):
-            self.promo_tracks.horizontalHeader().setSectionResizeMode(
-                column, QHeaderView.ResizeMode.ResizeToContents
-            )
-        self.promo_tracks.verticalHeader().setDefaultSectionSize(46)
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.promo_tracks.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.promo_tracks.horizontalHeader().setMinimumSectionSize(72)
+        self.promo_tracks.verticalHeader().setDefaultSectionSize(44)
         self.promo_tracks.setMinimumHeight(50)
         self.promo_preview_player = QMediaPlayer(self)
         self.promo_preview_audio = QAudioOutput(self)
@@ -1677,7 +1680,8 @@ class MainWindow(QMainWindow):
             start.textChanged.connect(self.validate)
             start.detect_requested.connect(lambda row=row: self.start_drop_detection(row))
             duration = QDoubleSpinBox()
-            duration.setFixedSize(150, 38)
+            duration.setMinimumWidth(88)
+            duration.setFixedHeight(36)
             duration.setStyleSheet(TIMESTAMP_FIELD_STYLE)
             duration.setRange(1, 3600)
             duration.setDecimals(1)
@@ -1685,7 +1689,8 @@ class MainWindow(QMainWindow):
             duration.setValue(old_duration)
             duration.valueChanged.connect(self.validate)
             preview = QPushButton("▶ Listen")
-            preview.setFixedSize(150, 38)
+            preview.setMinimumWidth(96)
+            preview.setFixedHeight(36)
             preview.setStyleSheet(TIMESTAMP_BUTTON_STYLE)
             preview.clicked.connect(
                 lambda _checked=False, row=row, button=preview: self.toggle_promo_preview(row, button)
