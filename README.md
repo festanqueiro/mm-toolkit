@@ -16,7 +16,7 @@ The macOS bundle, Windows executable, and application windows use the rounded pl
 - Detect the main bass-energy drop and animate the original punchy zoom-blur effect.
 - Turn the bass-reactive zoom blur on or off; when off, the artwork remains static.
 - Configure how many seconds before the detected drop the snippet begins (default: 2 seconds).
-- Preview the selected artwork and play the first detected track in the system viewer/player.
+- See an inline thumbnail of the selected artwork and play the first detected track in the system audio player.
 - Clear the complete form and saved selections to start fresh.
 
 ## Livestream Clips tab

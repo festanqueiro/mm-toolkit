@@ -419,9 +419,13 @@ class MainWindow(QMainWindow):
         self.music_status = QLabel("Choose a music folder.")
         self.cover_status = QLabel("Choose artwork.")
         self.output_status = QLabel("Choose an export folder.")
-        self.preview_artwork = QPushButton("View Artwork")
-        self.preview_artwork.setEnabled(False)
-        self.preview_artwork.clicked.connect(lambda: open_preview(self, self.cover.path))
+        self.artwork_preview = QLabel("Artwork preview")
+        self.artwork_preview.setFixedSize(104, 104)
+        self.artwork_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.artwork_preview.setWordWrap(True)
+        self.artwork_preview.setStyleSheet(
+            "QLabel { border: 1px solid palette(mid); border-radius: 8px; padding: 4px; }"
+        )
         self.preview_audio = QPushButton("▶ Play First Track")
         self.preview_audio.setEnabled(False)
         self.preview_audio.clicked.connect(self.play_first_track)
@@ -438,15 +442,14 @@ class MainWindow(QMainWindow):
         form.setSpacing(12)
         form.addRow("Music folder", self.music)
         form.addRow("", self.music_status)
-        form.addRow("Artwork", self.cover)
+        artwork_row = QWidget()
+        artwork_layout = QHBoxLayout(artwork_row)
+        artwork_layout.setContentsMargins(0, 0, 0, 0)
+        artwork_layout.addWidget(self.cover, 1)
+        artwork_layout.addWidget(self.artwork_preview)
+        form.addRow("Artwork", artwork_row)
         form.addRow("", self.cover_status)
-        preview_row = QWidget()
-        preview_layout = QHBoxLayout(preview_row)
-        preview_layout.setContentsMargins(0, 0, 0, 0)
-        preview_layout.addWidget(self.preview_artwork)
-        preview_layout.addWidget(self.preview_audio)
-        preview_layout.addStretch()
-        form.addRow("Preview", preview_row)
+        form.addRow("Audio preview", self.preview_audio)
         form.addRow("Export folder", self.output)
         form.addRow("", self.output_status)
         form.addRow("Visual effect", self.bass_effect)
@@ -516,11 +519,11 @@ class MainWindow(QMainWindow):
         )
         cover_ok, cover_message = validate_cover(self.cover.path)
         self.cover_status.setText(("✓ " if cover_ok else "") + cover_message)
+        self.update_artwork_preview(cover_ok)
         output_path = Path(self.output.path).expanduser() if self.output.path else None
         output_ok = bool(output_path and output_path.is_dir() and os.access(output_path, os.W_OK))
         self.output_status.setText("✓ Export folder is writable." if output_ok else "Choose a writable export folder.")
         ready = music_ok and cover_ok and output_ok and self.worker is None
-        self.preview_artwork.setEnabled(cover_ok and self.worker is None)
         self.preview_audio.setEnabled(music_ok and self.worker is None)
         self.generate.setEnabled(ready)
         return ready
@@ -530,6 +533,22 @@ class MainWindow(QMainWindow):
         if tracks:
             open_preview(self, tracks[0])
 
+    def update_artwork_preview(self, cover_ok: bool) -> None:
+        if not cover_ok:
+            self.artwork_preview.setPixmap(QPixmap())
+            self.artwork_preview.setText("Artwork preview")
+            return
+        pixmap = QPixmap(self.cover.path)
+        self.artwork_preview.setText("")
+        self.artwork_preview.setPixmap(
+            pixmap.scaled(
+                94,
+                94,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+
     def set_inputs_enabled(self, enabled: bool) -> None:
         for row in (self.music, self.cover, self.output):
             row.set_enabled(enabled)
@@ -537,7 +556,6 @@ class MainWindow(QMainWindow):
         self.pre_drop.setEnabled(enabled)
         self.clear_button.setEnabled(enabled)
         if not enabled:
-            self.preview_artwork.setEnabled(False)
             self.preview_audio.setEnabled(False)
 
     def clear(self) -> None:
