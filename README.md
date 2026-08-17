@@ -61,7 +61,7 @@ Tab icons are bundled from [Google Material Icons](https://fonts.google.com/icon
 
 ## About tab
 
-Displays the transparent full brand lockup, current application version, open-source description, and GitHub repository link.
+Displays the transparent full brand lockup, current application version, open-source description, and GitHub repository link. When GitHub has a newer semantic release, it also shows a clickable download link to that release.
 
 ## Settings tab
 

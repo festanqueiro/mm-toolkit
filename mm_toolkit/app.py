@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import html
 import json
 import shutil
 import sys
@@ -15,6 +16,7 @@ from PySide6.QtCore import QByteArray, QSettings, QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
@@ -63,6 +65,7 @@ from .core import (
     validate_video,
 )
 from . import __version__
+from .versioning import is_newer_version
 
 
 def open_preview(parent: QWidget, path: str | Path) -> None:
@@ -1114,6 +1117,10 @@ class AboutTab(QWidget):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version = QLabel(f"Version {__version__}")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.update_link = QLabel()
+        self.update_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.update_link.setOpenExternalLinks(True)
+        self.update_link.hide()
         description = QLabel(
             "Audio & Video tools for all"
         )
@@ -1139,11 +1146,42 @@ class AboutTab(QWidget):
         layout.addWidget(logo)
         layout.addWidget(title)
         layout.addWidget(version)
+        layout.addWidget(self.update_link)
         layout.addSpacing(10)
         layout.addWidget(description)
         layout.addWidget(repository)
         layout.addWidget(icon_credit)
         layout.addStretch()
+
+        self.update_manager = QNetworkAccessManager(self)
+        request = QNetworkRequest(
+            QUrl("https://api.github.com/repos/festanqueiro/mm-toolkit/releases/latest")
+        )
+        request.setRawHeader(b"Accept", b"application/vnd.github+json")
+        request.setRawHeader(b"User-Agent", b"MM-Toolkit-update-check")
+        reply = self.update_manager.get(request)
+        reply.finished.connect(lambda reply=reply: self.on_update_check_finished(reply))
+
+    def on_update_check_finished(self, reply: QNetworkReply) -> None:
+        try:
+            if reply.error() != QNetworkReply.NetworkError.NoError:
+                return
+            release = json.loads(bytes(reply.readAll()).decode("utf-8"))
+            tag = str(release.get("tag_name", ""))
+            url = str(release.get("html_url", ""))
+            if not url.startswith("https://github.com/festanqueiro/mm-toolkit/releases/"):
+                return
+            if is_newer_version(__version__, tag):
+                display_version = tag.removeprefix("v")
+                self.update_link.setText(
+                    f'<a href="{html.escape(url, quote=True)}">'
+                    f"Download MM Toolkit {html.escape(display_version)}</a>"
+                )
+                self.update_link.show()
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
+            return
+        finally:
+            reply.deleteLater()
 
 
 class HistoryTab(QWidget):
