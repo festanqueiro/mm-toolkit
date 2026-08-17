@@ -16,7 +16,7 @@ import cv2
 import imageio_ffmpeg
 import numpy as np
 import soundfile as sf
-from moviepy import AudioFileClip, VideoClip
+from moviepy import AudioFileClip, VideoClip, VideoFileClip
 from moviepy.audio.fx import AudioFadeIn, AudioFadeOut
 from moviepy.video.fx import FadeIn, FadeOut
 from PIL import Image, ImageOps
@@ -147,6 +147,21 @@ def validate_cover(path: str | Path) -> tuple[bool, str]:
     except Exception:
         return False, "The selected artwork could not be read."
     return True, "Artwork ready."
+
+
+def validate_visual(path: str | Path) -> tuple[bool, str]:
+    visual = Path(path).expanduser()
+    if visual.suffix.lower() in IMAGE_EXTENSIONS:
+        valid, message = validate_cover(visual)
+        return valid, "Image ready." if valid else message.replace("Artwork", "Image")
+    if visual.suffix.lower() in VIDEO_EXTENSIONS:
+        if not visual.is_file():
+            return False, "Choose an image or video."
+        capture = cv2.VideoCapture(os.fspath(visual))
+        readable, _frame = capture.read()
+        capture.release()
+        return (True, "Video ready.") if readable else (False, "The selected video could not be read.")
+    return False, "Choose a PNG, JPG, WebP, TIFF, MP4, MOV, M4V, MKV, AVI, or WebM file."
 
 
 def media_kind(path: str | Path) -> str | None:
@@ -284,6 +299,25 @@ def _load_artwork(
         return np.array(artwork, dtype=np.uint8)
 
 
+def _fit_visual_frame(
+    frame: np.ndarray,
+    size: int | None,
+    output_size: tuple[int, int] | None,
+) -> np.ndarray:
+    image = Image.fromarray(np.asarray(frame, dtype=np.uint8)).convert("RGB")
+    if size is not None:
+        image = image.resize((size, size), Image.Resampling.LANCZOS)
+    elif output_size is not None:
+        width, height = output_size
+        fitted = ImageOps.contain(image, (width, height), Image.Resampling.LANCZOS)
+        canvas = Image.new("RGB", (width, height), (25, 25, 29))
+        canvas.paste(fitted, ((width - fitted.width) // 2, (height - fitted.height) // 2))
+        image = canvas
+    elif image.width % 2 or image.height % 2:
+        image = image.crop((0, 0, image.width - image.width % 2, image.height - image.height % 2))
+    return np.array(image, dtype=np.uint8)
+
+
 class _MoviePyLogger(ProgressBarLogger):
     def __init__(self, callback: Callable[[float], None]):
         super().__init__()
@@ -343,15 +377,30 @@ def render_track(
             if settings.bass_effect
             else None
         )
-        background = _load_artwork(cover_path, settings.size, settings.output_size)
+        visual_clip: VideoFileClip | None = None
+        if cover_path.suffix.lower() in VIDEO_EXTENSIONS:
+            visual_clip = VideoFileClip(os.fspath(cover_path), audio=False)
+            if visual_clip.duration <= 0:
+                raise RuntimeError(f"{cover_path.name} contains no usable video.")
+            background = None
+        else:
+            background = _load_artwork(cover_path, settings.size, settings.output_size)
+
+        def visual_frame(time: float) -> np.ndarray:
+            if visual_clip is None:
+                assert background is not None
+                return background
+            frame = visual_clip.get_frame(time % visual_clip.duration)
+            return _fit_visual_frame(frame, settings.size, settings.output_size)
 
         def make_frame(time: float) -> np.ndarray:
             if should_cancel():
                 raise CancelledError("Generation cancelled.")
+            frame = visual_frame(time)
             if envelope is None:
-                return background
+                return frame
             index = min(int(time * settings.fps), len(envelope) - 1)
-            return _radial_blur(background, float(envelope[index]))
+            return _radial_blur(frame, float(envelope[index]))
 
         fade = min(settings.fade, actual_duration / 2)
         audio = AudioFadeOut(fade).apply(AudioFadeIn(fade).apply(AudioFileClip(os.fspath(trimmed))))
@@ -379,6 +428,8 @@ def render_track(
         finally:
             audio.close()
             video.close()
+            if visual_clip is not None:
+                visual_clip.close()
             if should_cancel():
                 output_path.unlink(missing_ok=True)
 

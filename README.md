@@ -13,18 +13,19 @@ Tab icons are bundled from [Google Material Icons](https://fonts.google.com/icon
 
 - Pick one audio file or a folder and immediately verify the supported files found.
 - Supports WAV, AIFF, FLAC, MP3, M4A, AAC, and OGG input through FFmpeg.
-- Pick and validate PNG, JPEG, WebP, or TIFF artwork.
+- Pick and validate a PNG, JPEG, WebP, or TIFF image, or an MP4, MOV, M4V, MKV, AVI, or WebM video.
 - Pick a writable export folder.
-- Generate one H.264/AAC MP4 per track at the artwork's native dimensions and aspect ratio.
+- Generate one H.264/AAC MP4 per track at the visual's native dimensions and aspect ratio.
+- Loop video visuals when they are shorter than the selected audio clip; the source video's audio is replaced by the selected music.
 - Keep the UI responsive and show current-track and overall rendering progress.
 - Remember the last selected paths.
 - Detect the main bass-energy drop and animate the original punchy zoom-blur effect.
-- Turn the bass-reactive zoom blur on or off; when off, the artwork remains static.
+- Turn the bass-reactive zoom blur on or off; when off, the selected image or video is preserved without that effect.
 - Add one promo row per detected audio file and edit each track's start time and duration independently.
 - Enable automatic drop detection to populate every start time using a configurable lead-in (default: 2 seconds), or disable it for manual starts.
-- See an inline thumbnail of the selected artwork.
+- See an inline thumbnail of the selected image or the first frame of the selected video.
 - Clear the complete form and saved selections to start fresh.
-- Choose artwork-native, vertical, square, or landscape output profiles.
+- Choose visual-native, vertical, square, or landscape output profiles.
 - Configure per-track duration plus shared frame rate, CRF quality, encoding speed, and audio bitrate.
 - Cancel active rendering safely; partial outputs are removed.
 - Review job size/duration estimates before starting.
@@ -78,7 +79,7 @@ python -m pip install -r requirements.txt
 python -m media_tools_for_record_labels
 ```
 
-Rendering large native-resolution artwork at 24 fps for 60 seconds can be compute-heavy.
+Rendering large native-resolution images or videos at 24 fps for 60 seconds can be compute-heavy.
 
 ## Build the macOS app
 
@@ -108,7 +109,7 @@ Main-branch releases produce both a portable ZIP and an Inno Setup `.exe` instal
 
 ## Defaults inherited from the original script
 
-- Artwork-native output resolution (odd dimensions are reduced by one pixel for H.264 compatibility)
+- Visual-native output resolution (odd dimensions are reduced by one pixel for H.264 compatibility)
 - 24 fps
 - 60-second snippet
 - Snippet begins 2 seconds before the detected drop

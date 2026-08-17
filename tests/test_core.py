@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import cv2
 from PIL import Image
 import soundfile as sf
 
@@ -18,6 +19,7 @@ from media_tools_for_record_labels.core import (
     resolve_output,
     safe_filename,
     validate_cover,
+    validate_visual,
     validate_video,
 )
 
@@ -78,8 +80,21 @@ def test_media_validation(tmp_path: Path) -> None:
     video = tmp_path / "source.mp4"
     video.touch()
     assert validate_cover(cover)[0]
+    assert validate_visual(cover)[0]
     assert validate_video(video)[0]
     assert not validate_video(tmp_path / "source.txt")[0]
+
+
+def test_video_visual_is_readable(tmp_path: Path) -> None:
+    visual = tmp_path / "visual.avi"
+    writer = cv2.VideoWriter(str(visual), cv2.VideoWriter_fourcc(*"MJPG"), 12, (64, 48))
+    assert writer.isOpened()
+    writer.write(np.full((48, 64, 3), (20, 80, 180), dtype=np.uint8))
+    writer.release()
+
+    valid, message = validate_visual(visual)
+    assert valid
+    assert message == "Video ready."
 
 
 def test_safe_filename_and_conflict_policies(tmp_path: Path) -> None:

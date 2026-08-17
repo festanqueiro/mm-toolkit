@@ -10,8 +10,9 @@ import traceback
 from pathlib import Path
 from datetime import datetime
 
+import cv2
 from PySide6.QtCore import QByteArray, QSettings, QThread, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPainter, QPalette, QPixmap
+from PySide6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtSvg import QSvgRenderer
@@ -58,7 +59,7 @@ from .core import (
     generate_videos,
     media_kind,
     parse_timestamp,
-    validate_cover,
+    validate_visual,
     validate_video,
 )
 from . import __version__
@@ -1163,7 +1164,7 @@ class MainWindow(QMainWindow):
         self.resize(1100, 820)
 
         title = page_title("Video Generator")
-        subtitle = QLabel("Turn audio and cover artwork into videos at the artwork's native resolution.")
+        subtitle = QLabel("Turn audio plus an image or video into a new music video at the visual's native resolution.")
         subtitle.setWordWrap(True)
 
         self.music = PathRow(
@@ -1172,18 +1173,18 @@ class MainWindow(QMainWindow):
             "Audio (*.wav *.wave *.aif *.aiff *.flac *.mp3 *.m4a *.aac *.ogg)",
         )
         self.cover = PathRow(
-            "Choose cover artwork",
+            "Choose image or video",
             "file",
-            "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff)",
+            "Visuals (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.mp4 *.mov *.m4v *.mkv *.avi *.webm)",
         )
         self.output = PathRow("Choose export folder", "directory")
         self.music_status = QLabel("Choose an audio file or folder.")
-        self.cover_status = QLabel("Choose artwork.")
+        self.cover_status = QLabel("Choose an image or video.")
         self.output_status = QLabel("Choose an export folder.")
         self.music_status.setWordWrap(True)
         self.cover_status.setWordWrap(True)
         self.output_status.setWordWrap(True)
-        self.artwork_preview = QLabel("Artwork preview")
+        self.artwork_preview = QLabel("Visual preview")
         self.artwork_preview.setFixedSize(104, 104)
         self.artwork_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.artwork_preview.setWordWrap(True)
@@ -1212,7 +1213,7 @@ class MainWindow(QMainWindow):
         self.analysis_status.setWordWrap(True)
         self.profile = QComboBox()
         for label, value in (
-            ("Artwork native", None),
+            ("Visual native", None),
             ("Vertical 1080 × 1920", (1080, 1920)),
             ("Square 1080 × 1080", (1080, 1080)),
             ("Landscape 1920 × 1080", (1920, 1080)),
@@ -1250,7 +1251,7 @@ class MainWindow(QMainWindow):
         artwork_layout.setContentsMargins(0, 0, 0, 0)
         artwork_layout.addWidget(self.cover, 1)
         artwork_layout.addWidget(self.artwork_preview)
-        input_form.addRow("Artwork", artwork_row)
+        input_form.addRow("Image or video", artwork_row)
         input_form.addRow("", self.cover_status)
 
         effects_form = QFormLayout()
@@ -1542,7 +1543,7 @@ class MainWindow(QMainWindow):
             if music_ok
             else "Choose a supported audio file or a folder containing audio (WAV, AIFF, FLAC, MP3, M4A, AAC, OGG)."
         )
-        cover_ok, cover_message = validate_cover(self.cover.path)
+        cover_ok, cover_message = validate_visual(self.cover.path)
         self.cover_status.setText(("✓ " if cover_ok else "") + cover_message)
         self.update_artwork_preview(cover_ok)
         editable = self.worker is None
@@ -1560,7 +1561,7 @@ class MainWindow(QMainWindow):
         if not music_ok:
             missing.append("choose supported audio")
         if not cover_ok:
-            missing.append("choose valid artwork")
+            missing.append("choose a valid image or video")
         if not output_ok:
             missing.append("choose a writable export folder")
         if music_ok and not track_options:
@@ -1587,9 +1588,20 @@ class MainWindow(QMainWindow):
     def update_artwork_preview(self, cover_ok: bool) -> None:
         if not cover_ok:
             self.artwork_preview.setPixmap(QPixmap())
-            self.artwork_preview.setText("Artwork preview")
+            self.artwork_preview.setText("Visual preview")
             return
-        pixmap = QPixmap(self.cover.path)
+        if Path(self.cover.path).suffix.lower() in {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}:
+            capture = cv2.VideoCapture(self.cover.path)
+            readable, frame = capture.read()
+            capture.release()
+            if not readable:
+                self.artwork_preview.setText("Video preview unavailable")
+                return
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            height, width, channels = rgb.shape
+            pixmap = QPixmap.fromImage(QImage(rgb.data, width, height, channels * width, QImage.Format.Format_RGB888).copy())
+        else:
+            pixmap = QPixmap(self.cover.path)
         self.artwork_preview.setText("")
         self.artwork_preview.setPixmap(
             pixmap.scaled(
