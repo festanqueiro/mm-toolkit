@@ -39,7 +39,7 @@ from mm_toolkit.core import (
     parse_timestamp,
     validate_media_source,
 )
-from mm_toolkit.ui.helpers import open_preview, page_title, section_group, show_completion, show_error
+from mm_toolkit.ui.helpers import page_title, section_group, show_completion, show_error
 from mm_toolkit.ui.style import ICON_BUTTON_STYLE, TIMESTAMP_BUTTON_STYLE, TIMESTAMP_FIELD_STYLE, material_icon
 from mm_toolkit.ui.widgets import PathRow
 

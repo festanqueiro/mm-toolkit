@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import mm_toolkit
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -29,7 +30,7 @@ ICON_BUTTON_STYLE = (
 
 
 def bundled_asset(name: str) -> Path:
-    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent.parent))
+    root = Path(getattr(sys, "_MEIPASS", Path(mm_toolkit.__file__).resolve().parent.parent))
     return root / "assets" / name
 
 
