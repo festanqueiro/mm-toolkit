@@ -24,6 +24,10 @@ python -m pytest -k drop_time -q                               # by keyword
 
 FFmpeg must be resolvable at runtime: a system install (`brew install ffmpeg`) is used first, falling back to the bundled `imageio-ffmpeg` binary (see `core.require_ffmpeg`). PyInstaller must build on the target OS — a Windows executable cannot be produced from macOS.
 
+## Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/): `<type>: <description>`, e.g. `feat: add drop detection to Media Cutter`, `fix: correct bundled_asset path depth`, `docs: update README build steps`. Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`. Scope the subject to what actually changed; keep it imperative and under ~72 chars.
+
 ## Architecture
 
 The codebase is a strict two-layer split:
