@@ -29,7 +29,7 @@ ICON_BUTTON_STYLE = (
 
 
 def bundled_asset(name: str) -> Path:
-    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent.parent))
     return root / "assets" / name
 
 
