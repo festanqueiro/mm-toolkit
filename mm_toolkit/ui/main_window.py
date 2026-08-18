@@ -56,8 +56,8 @@ class MainWindow(QMainWindow):
     def apply_app_settings(self) -> None:
         default_output = self.settings.value("general/default_output", "")
         if default_output and Path(default_output).is_dir():
-            if not self.output.path:
-                self.output.set_path(default_output)
+            if not self.video_generator.output.path:
+                self.video_generator.output.set_path(default_output)
             if not self.clips.output.path:
                 self.clips.output.set_path(default_output)
             if not self.converter.output.path:
@@ -74,23 +74,23 @@ class MainWindow(QMainWindow):
 
     def load_history_job(self, record: dict) -> None:
         if record.get("tool") == "promo":
-            self.music.set_path(record.get("source", ""))
-            self.cover.set_path(record.get("cover", ""))
-            self.output.set_path(record.get("output", ""))
-            self.bass_effect.setChecked(record.get("bass_effect", True))
-            self.video_fade.setChecked(record.get("video_fade", True))
-            self.audio_fade.setChecked(record.get("audio_fade", True))
-            self.mute_original_video_audio.setChecked(record.get("mute_original_video_audio", True))
+            self.video_generator.music.set_path(record.get("source", ""))
+            self.video_generator.cover.set_path(record.get("cover", ""))
+            self.video_generator.output.set_path(record.get("output", ""))
+            self.video_generator.bass_effect.setChecked(record.get("bass_effect", True))
+            self.video_generator.video_fade.setChecked(record.get("video_fade", True))
+            self.video_generator.audio_fade.setChecked(record.get("audio_fade", True))
+            self.video_generator.mute_original_video_audio.setChecked(record.get("mute_original_video_audio", True))
             stored_tracks = {item.get("path"): item for item in record.get("tracks", [])}
-            for row in range(self.promo_tracks.rowCount()):
-                path = self.promo_tracks.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            for row in range(self.video_generator.promo_tracks.rowCount()):
+                path = self.video_generator.promo_tracks.item(row, 0).data(Qt.ItemDataRole.UserRole)
                 if path in stored_tracks:
-                    self.promo_tracks.cellWidget(row, 1).setText(format_timestamp(stored_tracks[path].get("start", 0)))
-                    self.promo_tracks.cellWidget(row, 2).setValue(stored_tracks[path].get("duration", 60))
-            self.analysis_status.setText("✓ Loaded saved per-track timings.")
-            self.fps.setValue(record.get("fps", 24))
+                    self.video_generator.promo_tracks.cellWidget(row, 1).setText(format_timestamp(stored_tracks[path].get("start", 0)))
+                    self.video_generator.promo_tracks.cellWidget(row, 2).setValue(stored_tracks[path].get("duration", 60))
+            self.video_generator.analysis_status.setText("✓ Loaded saved per-track timings.")
+            self.video_generator.fps.setValue(record.get("fps", 24))
             profile = record.get("profile")
-            self.profile.setCurrentIndex(max(0, self.profile.findData(tuple(profile) if profile else None)))
+            self.video_generator.profile.setCurrentIndex(max(0, self.video_generator.profile.findData(tuple(profile) if profile else None)))
             self.tabs.setCurrentIndex(0)
         elif record.get("tool") == "clips":
             self.clips.source.set_path(record.get("source", ""))
