@@ -8,10 +8,9 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSize, QThread, QUrl, Qt, Signal
+from PySide6.QtCore import QSettings, QThread, QUrl, Qt, Signal
 from PySide6.QtGui import QPalette
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFormLayout,
@@ -23,7 +22,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSizePolicy,
-    QSlider,
     QTableWidget,
     QToolButton,
     QVBoxLayout,
@@ -41,7 +39,7 @@ from mm_toolkit.core import (
 )
 from mm_toolkit.ui.helpers import page_title, section_group, show_completion, show_error
 from mm_toolkit.ui.style import ICON_BUTTON_STYLE, TIMESTAMP_BUTTON_STYLE, TIMESTAMP_FIELD_STYLE, material_icon
-from mm_toolkit.ui.widgets import PathRow
+from mm_toolkit.ui.widgets import MediaTransport, PathRow, VideoPreviewWidget
 
 
 class ClipWorker(QThread):
@@ -86,19 +84,6 @@ class ClipField(QLineEdit):
         self.focused.emit()
 
 
-class VideoPreviewWidget(QVideoWidget):
-    """Responsive 16:9 preview surface that preserves the source aspect ratio."""
-
-    def hasHeightForWidth(self) -> bool:  # noqa: N802
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802
-        return max(220, round(width * 9 / 16))
-
-    def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(640, 360)
-
-
 class ClipsTab(QWidget):
     job_completed = Signal(object)
     def __init__(self, settings: QSettings):
@@ -119,9 +104,17 @@ class ClipsTab(QWidget):
         self.output = PathRow("Choose clip export folder", "directory")
         self.source_status = QLabel("")
         self.output_status = QLabel("")
-        self.player = QMediaPlayer(self)
-        self.player_audio = QAudioOutput(self)
-        self.player.setAudioOutput(self.player_audio)
+        self.transport = MediaTransport(on_toggle=self.toggle_playback)
+        self.player = self.transport.player
+        self.player_audio = self.transport.player_audio
+        self.play_button = self.transport.play_button
+        self.timeline = self.transport.timeline
+        self.time_label = self.transport.time_label
+        # Extra clip-editor behavior layered on top of the shared transport's
+        # own signal wiring (see MediaTransport in widgets.py).
+        self.timeline.sliderPressed.connect(self.stop_clip_preview)
+        self.player.positionChanged.connect(self.on_clip_preview_position)
+        self.player.playbackStateChanged.connect(self.on_playback_state_stop_preview)
         self.video_preview = VideoPreviewWidget()
         self.video_preview.setMinimumSize(360, 220)
         self.video_preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -132,16 +125,6 @@ class ClipsTab(QWidget):
         self.preview_priming = False
         self.preview_prime_was_muted = False
         self.video_preview.videoSink().videoFrameChanged.connect(self.on_preview_frame_changed)
-        self.play_button = QPushButton("▶ Play")
-        self.play_button.setEnabled(False)
-        self.play_button.clicked.connect(self.toggle_playback)
-        self.timeline = QSlider(Qt.Orientation.Horizontal)
-        self.timeline.setRange(0, 0)
-        self.timeline.sliderPressed.connect(self.on_timeline_pressed)
-        self.timeline.sliderMoved.connect(self.on_timeline_moved)
-        self.timeline.sliderReleased.connect(self.on_timeline_released)
-        self.timeline_was_playing = False
-        self.time_label = QLabel("00:00:00 / 00:00:00")
         self.set_start_button = QPushButton("Set Start")
         self.set_end_button = QPushButton("Set End")
         self.active_clip_label = QLabel("Editing: Clip 01")
@@ -156,9 +139,6 @@ class ClipsTab(QWidget):
         )
         self.set_start_button.clicked.connect(lambda: self.set_timestamp(1))
         self.set_end_button.clicked.connect(lambda: self.set_timestamp(2))
-        self.player.positionChanged.connect(self.on_player_position)
-        self.player.durationChanged.connect(self.on_player_duration)
-        self.player.playbackStateChanged.connect(self.on_playback_state)
         self.player.mediaStatusChanged.connect(self.on_cutter_media_status)
         self.clip_preview_button: QToolButton | None = None
         self.clip_preview_start_ms: int | None = None
@@ -493,47 +473,15 @@ class ClipsTab(QWidget):
             self.stop_clip_preview()
             self.player.play()
 
-    def on_playback_state(self, state) -> None:  # noqa: ANN001
-        if not self.preview_priming:
-            self.play_button.setText("Pause" if state == QMediaPlayer.PlaybackState.PlayingState else "▶ Play")
+    def on_playback_state_stop_preview(self, state) -> None:  # noqa: ANN001
+        # Play/pause label text is handled by self.transport; this only layers
+        # the clip-preview-specific behavior on top of the same player signal.
         if state != QMediaPlayer.PlaybackState.PlayingState:
             self.stop_clip_preview()
 
-    def on_player_position(self, position: int) -> None:
-        if not self.timeline.isSliderDown():
-            self.timeline.setValue(position)
-        self.update_cutter_time_label(position)
+    def on_clip_preview_position(self, position: int) -> None:
         if self.clip_preview_end_ms and position >= self.clip_preview_end_ms:
             self.player.pause()
-
-    def update_cutter_time_label(self, position: int) -> None:
-        self.time_label.setText(
-            f"{format_timestamp(position / 1000)} / {format_timestamp(self.player.duration() / 1000)}"
-        )
-
-    def on_timeline_pressed(self) -> None:
-        self.timeline_was_playing = (
-            self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
-        )
-        if self.timeline_was_playing:
-            self.player.pause()
-        self.stop_clip_preview()
-
-    def on_timeline_moved(self, position: int) -> None:
-        self.player.setPosition(position)
-        self.update_cutter_time_label(position)
-
-    def on_timeline_released(self) -> None:
-        position = self.timeline.value()
-        self.player.setPosition(position)
-        self.update_cutter_time_label(position)
-        if self.timeline_was_playing:
-            self.player.play()
-        self.timeline_was_playing = False
-
-    def on_player_duration(self, duration: int) -> None:
-        self.timeline.setRange(0, max(0, duration))
-        self.on_player_position(self.player.position())
 
     def set_timestamp(self, column: int) -> None:
         row = self.table.currentRow()

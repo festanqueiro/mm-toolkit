@@ -5,8 +5,101 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLineEdit, QPushButton, QWidget
+from typing import Callable
+
+from PySide6.QtCore import QObject, QSize, Qt, Signal
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSlider, QWidget
+
+from mm_toolkit.core import format_timestamp
+
+
+class VideoPreviewWidget(QVideoWidget):
+    """Responsive 16:9 preview surface that preserves the source aspect ratio."""
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        return max(220, round(width * 9 / 16))
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(640, 360)
+
+
+class MediaTransport(QObject):
+    """Play/pause button, seek slider, and time label wired to a QMediaPlayer.
+
+    A non-visual controller: it owns the QMediaPlayer, QAudioOutput, and the
+    three control widgets, and wires the standard play/seek/duration state
+    machine between them. It does not lay the widgets out itself, since
+    callers differ (a simple row vs. widgets interspersed with other
+    controls) — place `.play_button` / `.timeline` / `.time_label` in
+    whatever layout fits. Callers needing extra behavior (e.g. clip-preview
+    bounds, media-status priming) connect additional slots directly to
+    `.player` / `.timeline` alongside this controller's own wiring, rather
+    than overriding it.
+    """
+
+    def __init__(self, parent: QObject | None = None, on_toggle: Callable[[], None] | None = None):
+        super().__init__(parent)
+        self.player = QMediaPlayer(self)
+        self.player_audio = QAudioOutput(self)
+        self.player.setAudioOutput(self.player_audio)
+        self.play_button = QPushButton("▶ Play")
+        self.play_button.setEnabled(False)
+        self.play_button.clicked.connect(on_toggle or self.toggle_playback)
+        self.timeline = QSlider(Qt.Orientation.Horizontal)
+        self.timeline.setRange(0, 0)
+        self.timeline.sliderPressed.connect(self.on_timeline_pressed)
+        self.timeline.sliderMoved.connect(self.on_timeline_moved)
+        self.timeline.sliderReleased.connect(self.on_timeline_released)
+        self.timeline_was_playing = False
+        self.time_label = QLabel("00:00:00 / 00:00:00")
+        self.player.positionChanged.connect(self.on_player_position)
+        self.player.durationChanged.connect(self.on_player_duration)
+        self.player.playbackStateChanged.connect(self.on_playback_state)
+
+    def toggle_playback(self) -> None:
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.player.pause()
+        else:
+            self.player.play()
+
+    def on_playback_state(self, state) -> None:  # noqa: ANN001
+        self.play_button.setText("Pause" if state == QMediaPlayer.PlaybackState.PlayingState else "▶ Play")
+
+    def on_player_position(self, position: int) -> None:
+        if not self.timeline.isSliderDown():
+            self.timeline.setValue(position)
+        self.update_time_label(position)
+
+    def update_time_label(self, position: int) -> None:
+        self.time_label.setText(
+            f"{format_timestamp(position / 1000)} / {format_timestamp(self.player.duration() / 1000)}"
+        )
+
+    def on_timeline_pressed(self) -> None:
+        self.timeline_was_playing = self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        if self.timeline_was_playing:
+            self.player.pause()
+
+    def on_timeline_moved(self, position: int) -> None:
+        self.player.setPosition(position)
+        self.update_time_label(position)
+
+    def on_timeline_released(self) -> None:
+        position = self.timeline.value()
+        self.player.setPosition(position)
+        self.update_time_label(position)
+        if self.timeline_was_playing:
+            self.player.play()
+        self.timeline_was_playing = False
+
+    def on_player_duration(self, duration: int) -> None:
+        self.timeline.setRange(0, max(0, duration))
+        self.on_player_position(self.player.position())
 
 
 class PathRow(QWidget):
