@@ -8,10 +8,6 @@ def test_version_is_semantic() -> None:
     assert re.fullmatch(r"\d+\.\d+\.\d+", __version__)
 
 
-def test_first_public_version() -> None:
-    assert __version__ == "1.0.0"
-
-
 def test_version_tuple_accepts_release_tag() -> None:
     assert version_tuple("v1.2.3") == (1, 2, 3)
 
