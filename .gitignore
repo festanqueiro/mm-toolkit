@@ -6,6 +6,8 @@ venv/
 build/
 dist/
 *.spec.bak
+.superpowers/
+.claude/scheduled_tasks.lock
 
 # Local configuration and credentials
 .env
