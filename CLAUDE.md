@@ -38,7 +38,11 @@ The codebase is a strict two-layer split:
 
 Entry points: `python -m mm_toolkit` runs `mm_toolkit/__main__.py` → `app.main()` for development. The packaged app instead runs `run_app.py`, a separate PyInstaller-friendly entry point referenced by `MMToolkit.spec` (`Analysis([... "run_app.py"])`).
 
-`mm_toolkit.__version__` (in `__init__.py`) is the single source of truth for the app version: it's baked into the PyInstaller bundle's `Info.plist` (`MMToolkit.spec`), drives the in-app update check (`versioning.is_newer_version`), and becomes the release tag/package filenames in `.github/workflows/main-release.yml`. Bump it before publishing a release.
+`mm_toolkit.__version__` (in `__init__.py`) is the single source of truth for the app version: it's baked into the PyInstaller bundle's `Info.plist` (`MMToolkit.spec`), drives the in-app update check (`versioning.is_newer_version`), and becomes the release tag/package filenames in `.github/workflows/main-release.yml`. Bump it before publishing a release — see Versioning below.
+
+## Versioning
+
+Every push to `main` (i.e. every release) bumps `mm_toolkit.__version__`: **patch** by default (`1.0.0` → `1.0.1`), **minor** or **major** only when explicitly requested by the user for that release (minor: `1.0.0` → `1.1.0`, resetting patch to 0; major: `1.0.0` → `2.0.0`, resetting minor/patch to 0).
 
 ### Release flow
 

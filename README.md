@@ -43,7 +43,7 @@ The first unsigned build may need to be opened with Control-click → Open. Dist
 
 Main-branch releases produce both a ZIP and native DMG. When macOS certificate/notarization secrets are configured, the release workflow signs and notarizes the app without storing credentials in the repository.
 
-Release tags and package filenames use semantic versions from `mm_toolkit.__version__`, starting at `v1.0.0`. Update that single value before publishing a new release.
+Release tags and package filenames use semantic versions from `mm_toolkit.__version__`, starting at `v1.0.0`. Bump that single value before publishing a new release: patch by default, minor or major only when explicitly called for.
 
 ## Windows path
 
