@@ -8,6 +8,7 @@ dist/
 *.spec.bak
 .superpowers/
 .claude/scheduled_tasks.lock
+.claude/settings.local.json
 
 # Local configuration and credentials
 .env
