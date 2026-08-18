@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from mm_toolkit import __version__
 from mm_toolkit.ui.helpers import page_title
 from mm_toolkit.ui.style import bundled_asset
-from mm_toolkit.versioning import is_newer_version
+from mm_toolkit.versioning import dev_build_label, is_newer_version
 
 
 class AboutTab(QWidget):
@@ -38,6 +38,11 @@ class AboutTab(QWidget):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version = QLabel(f"Version {__version__}")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dev_build = dev_build_label()
+        dev_build_line = QLabel(f"Dev build {dev_build}")
+        dev_build_line.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dev_build_line.setStyleSheet("color: palette(mid);")
+        dev_build_line.setVisible(dev_build is not None)
         self.update_link = QLabel()
         self.update_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.update_link.setOpenExternalLinks(True)
@@ -67,6 +72,7 @@ class AboutTab(QWidget):
         layout.addWidget(logo)
         layout.addWidget(title)
         layout.addWidget(version)
+        layout.addWidget(dev_build_line)
         layout.addWidget(self.update_link)
         layout.addSpacing(10)
         layout.addWidget(description)
