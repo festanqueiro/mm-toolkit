@@ -15,6 +15,28 @@ from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPush
 from mm_toolkit.core import format_timestamp
 
 
+class ClickableLabel(QLabel):
+    """A QLabel that emits `clicked` on release, with a pointing-hand cursor
+    only while `clickable` is set — used for status text that becomes an
+    actionable link once a job finishes, e.g. "Finished 1 video"."""
+
+    clicked = Signal()
+
+    def __init__(self, text: str = ""):
+        super().__init__(text)
+        self._clickable = False
+
+    def set_clickable(self, clickable: bool) -> None:
+        self._clickable = clickable
+        self.setCursor(Qt.CursorShape.PointingHandCursor if clickable else Qt.CursorShape.ArrowCursor)
+        self.setStyleSheet("QLabel { color: palette(link); text-decoration: underline; }" if clickable else "")
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802, ANN001
+        if self._clickable and event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.pos()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class VideoPreviewWidget(QVideoWidget):
     """Responsive 16:9 preview surface that preserves the source aspect ratio."""
 

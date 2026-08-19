@@ -39,7 +39,7 @@ from mm_toolkit.core import (
 )
 from mm_toolkit.ui.helpers import page_title, section_group, show_error
 from mm_toolkit.ui.style import ICON_BUTTON_STYLE, TIMESTAMP_BUTTON_STYLE, TIMESTAMP_FIELD_STYLE, material_icon
-from mm_toolkit.ui.widgets import MediaTransport, PathRow, VideoPreviewWidget
+from mm_toolkit.ui.widgets import ClickableLabel, MediaTransport, PathRow, VideoPreviewWidget
 
 
 class ClipWorker(QThread):
@@ -86,6 +86,7 @@ class ClipField(QLineEdit):
 
 class ClipsTab(QWidget):
     job_completed = Signal(object)
+    view_in_history = Signal()
     def __init__(self, settings: QSettings):
         super().__init__()
         self.settings = settings
@@ -202,7 +203,8 @@ class ClipsTab(QWidget):
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.hide()
         self.cancel_button.clicked.connect(self.cancel)
-        self.progress_status = QLabel("")
+        self.progress_status = ClickableLabel("")
+        self.progress_status.clicked.connect(self.view_in_history)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.hide()
@@ -588,6 +590,7 @@ class ClipsTab(QWidget):
         self.worker.finished.connect(self.worker_finished)
         self.progress.setValue(0)
         self.progress.show()
+        self.progress_status.set_clickable(False)
         self.progress_status.setText("Preparing clips…")
         self.progress_status.show()
         self.set_inputs_enabled(False)
@@ -612,6 +615,7 @@ class ClipsTab(QWidget):
             ],
             "outputs": outputs,
         })
+        self.progress_status.set_clickable(bool(outputs))
 
     def on_failure(self, message: str, details: str) -> None:
         show_error(self, "Clip creation failed", message, details)

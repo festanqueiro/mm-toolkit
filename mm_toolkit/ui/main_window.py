@@ -37,11 +37,13 @@ class MainWindow(QMainWindow):
         self.about = AboutTab()
         self.tabs = QTabWidget()
         icon_color = self.palette().color(QPalette.ColorRole.WindowText).name()
+        self.history_icon = material_icon("history", icon_color)
+        self.history_unread_icon = material_icon("notifications", icon_color)
         self.tabs.addTab(self.video_generator, material_icon("music_video", icon_color), "Video Generator")
         self.tabs.addTab(self.clips, material_icon("content_cut", icon_color), "Media Cutter")
         self.tabs.addTab(self.converter, material_icon("swap_horiz", icon_color), "Media Converter")
         self.history_tab_index = self.tabs.count()
-        self.tabs.addTab(self.history, material_icon("history", icon_color), "History")
+        self.tabs.addTab(self.history, self.history_icon, "History")
         self.tabs.addTab(self.app_settings, material_icon("settings", icon_color), "Settings")
         self.tabs.addTab(self.about, material_icon("info", icon_color), "About")
         self.setCentralWidget(self.tabs)
@@ -58,6 +60,9 @@ class MainWindow(QMainWindow):
         self.video_generator.job_completed.connect(self.add_history)
         self.clips.job_completed.connect(self.add_history)
         self.converter.job_completed.connect(self.add_history)
+        self.video_generator.view_in_history.connect(self.show_latest_in_history)
+        self.clips.view_in_history.connect(self.show_latest_in_history)
+        self.converter.view_in_history.connect(self.show_latest_in_history)
         self.history.load_requested.connect(self.load_history_job)
         self.tabs.currentChanged.connect(self.on_tab_changed)
         self.apply_app_settings()
@@ -96,8 +101,15 @@ class MainWindow(QMainWindow):
         if self.tabs.currentIndex() != self.history_tab_index:
             self.unread_history_count += 1
             self.tabs.setTabText(self.history_tab_index, f"History ({self.unread_history_count})")
+            self.tabs.setTabIcon(self.history_tab_index, self.history_unread_icon)
 
     def on_tray_message_clicked(self) -> None:
+        # A background notification shouldn't yank the user off whatever
+        # they're doing — just get the finished job ready to view, the
+        # unread badge/icon still shows something is waiting.
+        self.history.select_latest()
+
+    def show_latest_in_history(self) -> None:
         self.tabs.setCurrentIndex(self.history_tab_index)
         self.history.select_latest()
 
@@ -105,6 +117,7 @@ class MainWindow(QMainWindow):
         if index == self.history_tab_index and self.unread_history_count:
             self.unread_history_count = 0
             self.tabs.setTabText(self.history_tab_index, "History")
+            self.tabs.setTabIcon(self.history_tab_index, self.history_icon)
 
     def load_history_job(self, record: dict) -> None:
         if record.get("tool") == "promo":

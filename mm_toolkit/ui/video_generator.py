@@ -54,7 +54,7 @@ from mm_toolkit.ui.style import (
     TIMESTAMP_FIELD_STYLE,
     material_icon,
 )
-from mm_toolkit.ui.widgets import PathRow
+from mm_toolkit.ui.widgets import ClickableLabel, PathRow
 
 
 class RenderWorker(QThread):
@@ -188,6 +188,7 @@ class DropDetectionDialog(QDialog):
 
 class VideoGeneratorTab(QWidget):
     job_completed = Signal(object)
+    view_in_history = Signal()
 
     def __init__(self, settings: QSettings):
         super().__init__()
@@ -333,8 +334,9 @@ class VideoGeneratorTab(QWidget):
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
         self.progress.hide()
-        self.progress_status = QLabel("")
+        self.progress_status = ClickableLabel("")
         self.progress_status.hide()
+        self.progress_status.clicked.connect(self.view_in_history)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
@@ -823,6 +825,7 @@ class VideoGeneratorTab(QWidget):
         self.worker.finished.connect(self.worker_finished)
         self.progress.setValue(0)
         self.progress.show()
+        self.progress_status.set_clickable(False)
         self.progress_status.setText("Preparing…")
         self.progress_status.show()
         self.set_inputs_enabled(False)
@@ -858,6 +861,7 @@ class VideoGeneratorTab(QWidget):
             "profile": list(profile) if profile else None,
             "outputs": outputs,
         })
+        self.progress_status.set_clickable(bool(outputs))
 
     def on_failure(self, message: str, details: str) -> None:
         show_error(self, "Generation failed", message, details)
