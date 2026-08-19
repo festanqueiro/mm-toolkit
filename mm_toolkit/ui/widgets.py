@@ -151,6 +151,10 @@ class PathRow(QWidget):
         self.fallback_dir = path
 
     def choose(self) -> None:
+        # Native dialog: macOS remembers the last folder visited across all
+        # pickers in the app, which is the "just remember where I was"
+        # behavior users expect. `start` only matters the very first time a
+        # picker opens, before that memory exists.
         start = self.path or self.fallback_dir or str(Path.home())
         if self.mode in {"file", "file_or_directory"}:
             selected, _ = QFileDialog.getOpenFileName(self, self.dialog_title, start, self.file_filter)
