@@ -23,6 +23,8 @@ from PIL import Image, ImageOps
 from proglog import ProgressBarLogger
 from scipy.signal import butter, sosfiltfilt
 
+from mm_toolkit.effects import EffectSettings, apply_effect_chain, build_background_frame
+
 AUDIO_EXTENSIONS = {".wav", ".wave", ".aif", ".aiff", ".flac", ".mp3", ".m4a", ".aac", ".ogg"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm"}
@@ -30,9 +32,6 @@ AUDIO_OUTPUT_FORMATS = ("mp3", "wav", "aiff", "flac", "m4a", "aac", "ogg")
 VIDEO_OUTPUT_FORMATS = ("mp4", "mov", "mkv", "avi", "webm")
 
 BASS_CUTOFF_HZ = 150
-BLUR_SAMPLES = 6
-MAX_ZOOM = 0.10
-STRENGTH_FLOOR = 0.05
 ENVELOPE_POWER = 1.6
 DROP_SEARCH_BIN_S = 0.5
 DROP_SEARCH_SKIP_S = 20
@@ -61,6 +60,7 @@ class RenderSettings:
     preset: str = "medium"
     crf: int = 18
     audio_bitrate: str = "320k"
+    effects: EffectSettings = EffectSettings()
 
 
 @dataclass(frozen=True)
@@ -273,28 +273,11 @@ def _build_bass_envelope(wav_path: Path, fps: int, duration: float) -> np.ndarra
     return np.clip(envelope, 0.0, 1.0) ** ENVELOPE_POWER
 
 
-def _radial_blur(image: np.ndarray, strength: float) -> np.ndarray:
-    if strength <= STRENGTH_FLOOR:
-        return image
-    height, width = image.shape[:2]
-    accumulator = np.zeros_like(image, dtype=np.float32)
-    for index in range(1, BLUR_SAMPLES + 1):
-        zoom = 1.0 + MAX_ZOOM * strength * index / BLUR_SAMPLES
-        resized = cv2.resize(
-            image,
-            (int(round(width * zoom)), int(round(height * zoom))),
-            interpolation=cv2.INTER_LINEAR,
-        )
-        y = (resized.shape[0] - height) // 2
-        x = (resized.shape[1] - width) // 2
-        accumulator += resized[y : y + height, x : x + width].astype(np.float32)
-    return (accumulator / BLUR_SAMPLES).astype(np.uint8)
-
-
 def _load_artwork(
     cover_path: Path,
     size: int | None,
     output_size: tuple[int, int] | None = None,
+    canvas_background: np.ndarray | None = None,
 ) -> np.ndarray:
     with Image.open(cover_path) as image:
         artwork = image.convert("RGB")
@@ -303,7 +286,11 @@ def _load_artwork(
         elif output_size is not None:
             width, height = output_size
             fitted = ImageOps.contain(artwork, (width, height), Image.Resampling.LANCZOS)
-            canvas = Image.new("RGB", (width, height), (25, 25, 29))
+            canvas = (
+                Image.fromarray(canvas_background)
+                if canvas_background is not None
+                else Image.new("RGB", (width, height), (25, 25, 29))
+            )
             canvas.paste(fitted, ((width - fitted.width) // 2, (height - fitted.height) // 2))
             artwork = canvas
         elif artwork.width % 2 or artwork.height % 2:
@@ -316,6 +303,7 @@ def _fit_visual_frame(
     frame: np.ndarray,
     size: int | None,
     output_size: tuple[int, int] | None,
+    canvas_background: np.ndarray | None = None,
 ) -> np.ndarray:
     image = Image.fromarray(np.asarray(frame, dtype=np.uint8)).convert("RGB")
     if size is not None:
@@ -323,7 +311,11 @@ def _fit_visual_frame(
     elif output_size is not None:
         width, height = output_size
         fitted = ImageOps.contain(image, (width, height), Image.Resampling.LANCZOS)
-        canvas = Image.new("RGB", (width, height), (25, 25, 29))
+        canvas = (
+            Image.fromarray(canvas_background)
+            if canvas_background is not None
+            else Image.new("RGB", (width, height), (25, 25, 29))
+        )
         canvas.paste(fitted, ((width - fitted.width) // 2, (height - fitted.height) // 2))
         image = canvas
     elif image.width % 2 or image.height % 2:
@@ -387,7 +379,7 @@ def render_track(
             raise RuntimeError(f"{source.name} contains no usable audio.")
         envelope = (
             _build_bass_envelope(trimmed, settings.fps, actual_duration)
-            if settings.bass_effect
+            if settings.effects.bass_blur.enabled
             else None
         )
         visual_clip: VideoFileClip | None = None
@@ -398,25 +390,40 @@ def render_track(
             )
             if visual_clip.duration <= 0:
                 raise RuntimeError(f"{cover_path.name} contains no usable video.")
+            native_size = visual_clip.size
             background = None
         else:
-            background = _load_artwork(cover_path, settings.size, settings.output_size)
+            with Image.open(cover_path) as probe:
+                native_size = probe.size
+
+        if settings.output_size is not None:
+            canvas_size = settings.output_size
+        elif settings.size is not None:
+            canvas_size = (settings.size, settings.size)
+        else:
+            width, height = native_size
+            canvas_size = (width - width % 2, height - height % 2)
+        effect_background = build_background_frame(canvas_size, settings.effects.background)
+
+        if visual_clip is None:
+            background = _load_artwork(cover_path, settings.size, settings.output_size, effect_background)
 
         def visual_frame(time: float) -> np.ndarray:
             if visual_clip is None:
                 assert background is not None
                 return background
             frame = visual_clip.get_frame(time % visual_clip.duration)
-            return _fit_visual_frame(frame, settings.size, settings.output_size)
+            return _fit_visual_frame(frame, settings.size, settings.output_size, effect_background)
 
         def make_frame(time: float) -> np.ndarray:
             if should_cancel():
                 raise CancelledError("Generation cancelled.")
             frame = visual_frame(time)
-            if envelope is None:
-                return frame
-            index = min(int(time * settings.fps), len(envelope) - 1)
-            return _radial_blur(frame, float(envelope[index]))
+            bass_strength = None
+            if envelope is not None:
+                index = min(int(time * settings.fps), len(envelope) - 1)
+                bass_strength = float(envelope[index])
+            return apply_effect_chain(frame, time, settings.effects, effect_background, bass_strength)
 
         fade = min(settings.fade, actual_duration / 2)
         music_audio = AudioFileClip(os.fspath(trimmed))

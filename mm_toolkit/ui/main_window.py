@@ -76,7 +76,12 @@ class MainWindow(QMainWindow):
             self.video_generator.music.set_path(record.get("source", ""))
             self.video_generator.cover.set_path(record.get("cover", ""))
             self.video_generator.output.set_path(record.get("output", ""))
-            self.video_generator.bass_effect.setChecked(record.get("bass_effect", True))
+            if record.get("effects"):
+                self.video_generator.effects_panel.apply_state(record["effects"])
+            else:
+                self.video_generator.effects_panel.rows["bass_blur"].checkbox.setChecked(
+                    record.get("bass_effect", True)
+                )
             self.video_generator.video_fade.setChecked(record.get("video_fade", True))
             self.video_generator.audio_fade.setChecked(record.get("audio_fade", True))
             self.video_generator.mute_original_video_audio.setChecked(record.get("mute_original_video_audio", True))

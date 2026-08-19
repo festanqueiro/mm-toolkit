@@ -46,6 +46,7 @@ from mm_toolkit.core import (
     parse_timestamp,
     validate_visual,
 )
+from mm_toolkit.ui.effects_panel import EffectsPanel
 from mm_toolkit.ui.helpers import page_title, section_group, show_completion, show_error
 from mm_toolkit.ui.style import (
     ICON_BUTTON_STYLE,
@@ -219,8 +220,7 @@ class VideoGeneratorTab(QWidget):
         self.artwork_preview.setFixedSize(104, 104)
         self.artwork_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.artwork_preview.hide()
-        self.bass_effect = QCheckBox("Bass-reactive zoom blur")
-        self.bass_effect.setChecked(True)
+        self.effects_panel = EffectsPanel(self.settings, "promo")
         self.video_fade = QCheckBox("Fade video in/out")
         self.video_fade.setChecked(True)
         self.audio_fade = QCheckBox("Fade audio in/out")
@@ -296,7 +296,6 @@ class VideoGeneratorTab(QWidget):
 
         effects_form = QFormLayout()
         effects_form.setSpacing(12)
-        effects_form.addRow("Visual effect", self.bass_effect)
         effects_form.addRow(self.mute_original_video_audio_label, self.mute_original_video_audio)
         effects_form.addRow("Video", self.video_fade)
         effects_form.addRow("Audio", self.audio_fade)
@@ -352,8 +351,12 @@ class VideoGeneratorTab(QWidget):
         input_column.addWidget(self.promo_clips_group, 1)
         input_column.addStretch()
         settings_column = QVBoxLayout()
+        effects_panel_layout = QVBoxLayout()
+        effects_panel_layout.addWidget(self.effects_panel)
+        self.visual_effects_group = section_group("Visual Effects", effects_panel_layout)
         self.post_effects_group = section_group("Post-Effects", effects_form)
         self.output_group = section_group("Output", output_form)
+        settings_column.addWidget(self.visual_effects_group)
         settings_column.addWidget(self.post_effects_group)
         settings_column.addWidget(self.output_group)
         settings_column.addStretch()
@@ -383,7 +386,6 @@ class VideoGeneratorTab(QWidget):
             value = self.settings.value(key, "")
             if value and Path(value).exists():
                 row.edit.setText(value)
-        self.bass_effect.setChecked(self.settings.value("promo/bass_effect", True, type=bool))
         self.video_fade.setChecked(self.settings.value("promo/video_fade", True, type=bool))
         self.audio_fade.setChecked(self.settings.value("promo/audio_fade", True, type=bool))
         self.mute_original_video_audio.setChecked(
@@ -629,6 +631,7 @@ class VideoGeneratorTab(QWidget):
         editable = self.worker is None
         self.promo_clips_group.setEnabled(music_ok and editable)
         downstream_ready = music_ok and cover_ok and editable
+        self.visual_effects_group.setEnabled(downstream_ready)
         self.post_effects_group.setEnabled(downstream_ready)
         self.output_group.setEnabled(downstream_ready)
         output_path = Path(self.output.path).expanduser() if self.output.path else None
@@ -715,7 +718,7 @@ class VideoGeneratorTab(QWidget):
             self.stop_promo_preview()
         for row in (self.music, self.cover, self.output):
             row.set_enabled(enabled)
-        self.bass_effect.setEnabled(enabled)
+        self.effects_panel.set_enabled(enabled)
         self.video_fade.setEnabled(enabled)
         self.audio_fade.setEnabled(enabled)
         self.mute_original_video_audio.setEnabled(
@@ -744,7 +747,7 @@ class VideoGeneratorTab(QWidget):
         self.music.set_path("")
         self.cover.set_path("")
         self.output.set_path(self.settings.value("general/default_output", ""))
-        self.bass_effect.setChecked(True)
+        self.effects_panel.clear()
         self.video_fade.setChecked(True)
         self.audio_fade.setChecked(True)
         self.mute_original_video_audio.setChecked(True)
@@ -758,7 +761,7 @@ class VideoGeneratorTab(QWidget):
         self.progress.hide()
         self.progress_status.clear()
         self.progress_status.hide()
-        for key in ("music", "cover", "output", "promo/bass_effect", "promo/video_fade", "promo/audio_fade", "promo/mute_original_video_audio"):
+        for key in ("music", "cover", "output", "promo/video_fade", "promo/audio_fade", "promo/mute_original_video_audio"):
             self.settings.remove(key)
         self.validate()
 
@@ -769,10 +772,11 @@ class VideoGeneratorTab(QWidget):
         track_options, _ = self.promo_track_options()
         for key, value in (("music", self.music.path), ("cover", self.cover.path), ("output", self.output.path)):
             self.settings.setValue(key, value)
+        effect_settings = self.effects_panel.effect_settings()
         render_settings = RenderSettings(
             fps=self.fps.value(),
             duration=self.duration.value(),
-            bass_effect=self.bass_effect.isChecked(),
+            bass_effect=effect_settings.bass_blur.enabled,
             mute_original_video_audio=self.mute_original_video_audio.isChecked(),
             video_fade=self.video_fade.isChecked(),
             audio_fade=self.audio_fade.isChecked(),
@@ -780,8 +784,9 @@ class VideoGeneratorTab(QWidget):
             preset=self.encoding_speed.currentData(),
             crf=self.crf.value(),
             audio_bitrate=self.audio_bitrate.currentData(),
+            effects=effect_settings,
         )
-        self.settings.setValue("promo/bass_effect", self.bass_effect.isChecked())
+        self.effects_panel.save()
         self.settings.setValue("promo/video_fade", self.video_fade.isChecked())
         self.settings.setValue("promo/audio_fade", self.audio_fade.isChecked())
         self.settings.setValue("promo/mute_original_video_audio", self.mute_original_video_audio.isChecked())
@@ -816,13 +821,15 @@ class VideoGeneratorTab(QWidget):
     def on_success(self, outputs: list[str]) -> None:
         profile = self.profile.currentData()
         track_options, _ = self.promo_track_options()
+        effects_state = self.effects_panel.state_dict()
         self.job_completed.emit({
             "tool": "promo",
             "created": datetime.now().isoformat(timespec="seconds"),
             "source": self.music.path,
             "cover": self.cover.path,
             "output": self.output.path,
-            "bass_effect": self.bass_effect.isChecked(),
+            "bass_effect": effects_state["bass_blur"]["enabled"],
+            "effects": effects_state,
             "video_fade": self.video_fade.isChecked(),
             "audio_fade": self.audio_fade.isChecked(),
             "mute_original_video_audio": self.mute_original_video_audio.isChecked(),
