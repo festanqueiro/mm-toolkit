@@ -166,7 +166,14 @@ def apply_rotate(frame: np.ndarray, angle_degrees: float, background: np.ndarray
     """Rotate the frame around its center, revealing `background` at the corners."""
     height, width = frame.shape[:2]
     matrix = cv2.getRotationMatrix2D((width / 2, height / 2), angle_degrees, 1.0)
-    rotated = cv2.warpAffine(frame, matrix, (width, height), flags=cv2.INTER_LINEAR)
+    # BORDER_REPLICATE (not the default black-fill) so linear interpolation
+    # right at the rotated edge blends real image colors, not black — a
+    # black-filled border there produces a visible dark seam once alpha
+    # blended against `background`, even though alpha itself anti-aliases
+    # cleanly.
+    rotated = cv2.warpAffine(
+        frame, matrix, (width, height), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE
+    )
     coverage = cv2.warpAffine(
         np.full((height, width), 255, dtype=np.uint8), matrix, (width, height), flags=cv2.INTER_LINEAR
     )
@@ -231,7 +238,10 @@ def apply_effect_chain(
                 result = apply_radial_blur(result, bass_strength)
         elif key == "rotate":
             if settings.rotate.enabled:
-                angle = (time * settings.rotate.rpm / 60.0) * 360.0
+                # /120 rather than /60: the literal RPM math read as twice
+                # too fast on screen (e.g. the 33.3 RPM vinyl default spun
+                # like 66 RPM), so the displayed value is halved here.
+                angle = (time * settings.rotate.rpm / 120.0) * 360.0
                 result = apply_rotate(result, angle, background)
         elif key == "vhs":
             if settings.vhs.enabled:

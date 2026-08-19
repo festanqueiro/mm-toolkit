@@ -174,14 +174,14 @@ class EffectsPanel(QWidget):
         )
         self._update_background_color_swatch()
 
-        background_form = QFormLayout()
-        background_form.setSpacing(10)
-        background_form.addRow(QLabel("<b>Background</b>"))
-        background_form.addRow("Fill", self.background_mode)
-        background_form.addRow("Color", self.background_color_button)
-        background_form.addRow("Image", self.background_image)
-        background_form.addRow(QLabel("<b>Overlay</b>"))
-        background_form.addRow("Image/Video", self.overlay_media)
+        self.background_form = QFormLayout()
+        self.background_form.setSpacing(10)
+        self.background_form.addRow(QLabel("<b>Background</b>"))
+        self.background_form.addRow("Fill", self.background_mode)
+        self.background_form.addRow("Color", self.background_color_button)
+        self.background_form.addRow("Image", self.background_image)
+        self.background_form.addRow(QLabel("<b>Overlay</b>"))
+        self.background_form.addRow("Image/Video", self.overlay_media)
 
         # Two independent widgets so a caller can place the effect stack and
         # the Layers (background + overlay media) controls in separate
@@ -199,7 +199,7 @@ class EffectsPanel(QWidget):
         self.layers_widget = QWidget()
         layers_layout = QVBoxLayout(self.layers_widget)
         layers_layout.setContentsMargins(0, 0, 0, 0)
-        layers_layout.addLayout(background_form)
+        layers_layout.addLayout(self.background_form)
 
         self.background_mode.currentIndexChanged.connect(self._sync_background_visibility)
         self.background_mode.currentIndexChanged.connect(self.changed)
@@ -211,8 +211,11 @@ class EffectsPanel(QWidget):
 
     def _sync_background_visibility(self) -> None:
         is_image = self.background_mode.currentData() == "image"
-        self.background_color_button.setVisible(not is_image)
-        self.background_image.setVisible(is_image)
+        # setRowVisible hides the row's label along with its field — just
+        # hiding the field widget leaves a dangling "Color"/"Image" label
+        # with nothing next to it.
+        self.background_form.setRowVisible(self.background_color_button, not is_image)
+        self.background_form.setRowVisible(self.background_image, is_image)
 
     def choose_background_color(self) -> None:
         color = QColorDialog.getColor(
