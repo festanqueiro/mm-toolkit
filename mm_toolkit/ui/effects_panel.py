@@ -1,11 +1,12 @@
 """Reusable, drag-reorderable visual-effects cascade panel.
 
 Wraps `mm_toolkit.effects.EffectSettings` in Qt controls (a draggable stack
-of Bass Blur / Rotate / VHS / Glitch rows, plus a Background layer) with
-QSettings persistence, so any tab can drop in `EffectsPanel(settings,
-"some_prefix")` to gain the same effect cascade the Video Generator uses,
-without duplicating widget wiring. New effects are added by extending
-`_EFFECT_DEFS` and `mm_toolkit.effects.apply_effect_chain` together.
+of Overlay / Bass Blur / Rotate / VHS / Glitch rows, plus a Background
+layer) with QSettings persistence, so any tab can drop in
+`EffectsPanel(settings, "some_prefix")` to gain the same effect cascade the
+Video Generator uses, without duplicating widget wiring. New effects are
+added by extending `_EFFECT_DEFS` and `mm_toolkit.effects.apply_effect_chain`
+together.
 """
 
 from __future__ import annotations
@@ -36,15 +37,20 @@ from mm_toolkit.effects import (
     BassBlurSettings,
     EffectSettings,
     GlitchSettings,
+    OverlaySettings,
     RotateSettings,
     VhsSettings,
 )
 from mm_toolkit.ui.widgets import PathRow
 
 _DEFAULT_BACKGROUND_COLOR = (25, 25, 29)
+_OVERLAY_FILE_FILTER = (
+    "Images/Videos (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.mp4 *.mov *.m4v *.mkv *.avi *.webm)"
+)
 
 # (key, display label, has a dry/wet amount slider)
 _EFFECT_DEFS: tuple[tuple[str, str, bool], ...] = (
+    ("overlay", "Overlay", True),
     ("bass_blur", "Bass-reactive Blur", False),
     ("rotate", "Rotate", False),
     ("vhs", "VHS", True),
@@ -119,7 +125,7 @@ class _EffectRow(QWidget):
 
 
 class EffectsPanel(QWidget):
-    """A draggable Bass Blur/Rotate/VHS/Glitch stack, plus a Background layer."""
+    """A draggable Overlay/Bass Blur/Rotate/VHS/Glitch stack, plus a Background layer."""
 
     changed = Signal()
 
@@ -151,6 +157,9 @@ class EffectsPanel(QWidget):
             self.items[key] = item
         self.list.setFixedHeight(len(_EFFECT_DEFS) * 40 + 8)
         self.rows["bass_blur"].checkbox.setChecked(True)
+        self.rows["overlay"].amount.setValue(100)
+
+        self.overlay_media = PathRow("Choose overlay image or video", "file", _OVERLAY_FILE_FILTER)
 
         self.background_mode = QComboBox()
         self.background_mode.addItem("Solid color", "color")
@@ -167,12 +176,16 @@ class EffectsPanel(QWidget):
 
         background_form = QFormLayout()
         background_form.setSpacing(10)
-        background_form.addRow("Background", self.background_mode)
+        background_form.addRow(QLabel("<b>Background</b>"))
+        background_form.addRow("Fill", self.background_mode)
         background_form.addRow("Color", self.background_color_button)
         background_form.addRow("Image", self.background_image)
+        background_form.addRow(QLabel("<b>Overlay</b>"))
+        background_form.addRow("Image/Video", self.overlay_media)
 
         # Two independent widgets so a caller can place the effect stack and
-        # the Layers (background) controls in separate collapsible sections.
+        # the Layers (background + overlay media) controls in separate
+        # collapsible sections.
         self.stack_widget = QWidget()
         stack_layout = QVBoxLayout(self.stack_widget)
         stack_layout.setContentsMargins(0, 0, 0, 0)
@@ -191,6 +204,7 @@ class EffectsPanel(QWidget):
         self.background_mode.currentIndexChanged.connect(self._sync_background_visibility)
         self.background_mode.currentIndexChanged.connect(self.changed)
         self.background_image.changed.connect(self.changed)
+        self.overlay_media.changed.connect(self.changed)
         self._sync_background_visibility()
 
         self.restore()
@@ -218,6 +232,7 @@ class EffectsPanel(QWidget):
         return [self.list.item(index).data(Qt.ItemDataRole.UserRole) for index in range(self.list.count())]
 
     def effect_settings(self) -> EffectSettings:
+        overlay_row = self.rows["overlay"]
         rotate_row = self.rows["rotate"]
         vhs_row = self.rows["vhs"]
         glitch_row = self.rows["glitch"]
@@ -228,6 +243,11 @@ class EffectsPanel(QWidget):
                 image_path=self.background_image.path or None,
             ),
             order=tuple(self.order()),
+            overlay=OverlaySettings(
+                enabled=overlay_row.checkbox.isChecked(),
+                media_path=self.overlay_media.path or None,
+                opacity=overlay_row.amount.value() / 100,
+            ),
             bass_blur=BassBlurSettings(enabled=self.rows["bass_blur"].checkbox.isChecked()),
             rotate=RotateSettings(enabled=rotate_row.checkbox.isChecked(), rpm=rotate_row.speed.value()),
             vhs=VhsSettings(enabled=vhs_row.checkbox.isChecked(), amount=vhs_row.amount.value() / 100),
@@ -241,6 +261,7 @@ class EffectsPanel(QWidget):
         self.background_mode.setEnabled(enabled)
         self.background_color_button.setEnabled(enabled)
         self.background_image.set_enabled(enabled)
+        self.overlay_media.set_enabled(enabled)
 
     def _reorder(self, order: list[str]) -> None:
         wanted = [key for key in order if key in self.items]
@@ -257,6 +278,11 @@ class EffectsPanel(QWidget):
         settings = self.effect_settings()
         return {
             "order": list(settings.order),
+            "overlay": {
+                "enabled": settings.overlay.enabled,
+                "opacity": settings.overlay.opacity,
+                "media_path": settings.overlay.media_path,
+            },
             "bass_blur": {"enabled": settings.bass_blur.enabled},
             "rotate": {"enabled": settings.rotate.enabled, "rpm": settings.rotate.rpm},
             "vhs": {"enabled": settings.vhs.enabled, "amount": settings.vhs.amount},
@@ -272,6 +298,11 @@ class EffectsPanel(QWidget):
         if not state:
             return
         self._reorder(state.get("order", []))
+        overlay = state.get("overlay", {})
+        overlay_row = self.rows["overlay"]
+        overlay_row.checkbox.setChecked(bool(overlay.get("enabled", False)))
+        overlay_row.amount.setValue(round(float(overlay.get("opacity", 1.0)) * 100))
+        self.overlay_media.set_path(overlay.get("media_path") or "")
         bass = state.get("bass_blur", {})
         self.rows["bass_blur"].checkbox.setChecked(bool(bass.get("enabled", True)))
         rotate = state.get("rotate", {})
@@ -310,6 +341,10 @@ class EffectsPanel(QWidget):
 
     def clear(self) -> None:
         self._reorder([key for key, _label, _amount in _EFFECT_DEFS])
+        overlay_row = self.rows["overlay"]
+        overlay_row.checkbox.setChecked(False)
+        overlay_row.amount.setValue(100)
+        self.overlay_media.set_path("")
         self.rows["bass_blur"].checkbox.setChecked(True)
         rotate_row = self.rows["rotate"]
         rotate_row.checkbox.setChecked(False)

@@ -1,17 +1,22 @@
 import numpy as np
+from PIL import Image
 
 from mm_toolkit.effects import (
     BackgroundSettings,
     EffectSettings,
     GlitchSettings,
+    OverlaySettings,
     RotateSettings,
     VhsSettings,
     apply_effect_chain,
     apply_glitch,
+    apply_overlay,
     apply_radial_blur,
     apply_rotate,
     apply_vhs,
     build_background_frame,
+    fit_overlay_frame,
+    load_overlay_image,
 )
 
 
@@ -83,6 +88,51 @@ def test_glitch_wet_changes_frame() -> None:
     glitched = apply_glitch(frame, 1.0, 1.0)
     assert glitched.shape == frame.shape
     assert not np.array_equal(glitched, frame)
+
+
+def test_apply_overlay_is_noop_at_zero_opacity() -> None:
+    frame = _frame()
+    overlay = np.zeros((frame.shape[0], frame.shape[1], 4), dtype=np.uint8)
+    overlay[..., 3] = 255
+    assert np.array_equal(apply_overlay(frame, overlay, 0.0), frame)
+
+
+def test_apply_overlay_blends_by_alpha_and_opacity() -> None:
+    frame = np.zeros((10, 10, 3), dtype=np.uint8)
+    overlay = np.zeros((10, 10, 4), dtype=np.uint8)
+    overlay[..., 0] = 200  # red
+    overlay[..., 3] = 255  # fully opaque source alpha
+    blended = apply_overlay(frame, overlay, 0.5)
+    assert blended[0, 0, 0] == 100  # half of 200 blended onto black
+
+
+def test_fit_overlay_frame_centers_on_transparent_canvas() -> None:
+    overlay = np.zeros((10, 20, 4), dtype=np.uint8)
+    overlay[..., 3] = 255
+    fitted = fit_overlay_frame(overlay, (40, 40))
+    assert fitted.shape == (40, 40, 4)
+    assert fitted[0, 0, 3] == 0  # corners stay transparent
+    assert fitted[20, 20, 3] == 255  # centered content is opaque
+
+
+def test_load_overlay_image_preserves_alpha(tmp_path) -> None:
+    path = tmp_path / "logo.png"
+    image = Image.new("RGBA", (10, 10), (255, 0, 0, 128))
+    image.save(path)
+    loaded = load_overlay_image(path, (10, 10))
+    assert loaded.shape == (10, 10, 4)
+    assert loaded[5, 5, 3] == 128
+
+
+def test_effect_chain_applies_overlay_before_effects_by_default() -> None:
+    frame = np.zeros((10, 10, 3), dtype=np.uint8)
+    background = np.zeros_like(frame)
+    overlay = np.zeros((10, 10, 4), dtype=np.uint8)
+    overlay[..., 1] = 200
+    overlay[..., 3] = 255
+    settings = EffectSettings(overlay=OverlaySettings(enabled=True, opacity=1.0))
+    result = apply_effect_chain(frame, 0.0, settings, background, overlay_frame=overlay)
+    assert result[0, 0, 1] == 200
 
 
 def test_effect_chain_applies_enabled_effects_in_order() -> None:

@@ -29,6 +29,21 @@ class BackgroundSettings:
 
 
 @dataclass(frozen=True)
+class OverlaySettings:
+    """A second image or video composited on top of the frame.
+
+    Unlike `background` (the foundation, always applied first), overlay is a
+    step in the reorderable cascade: by default it's applied before the
+    other effects (so they also act on the overlaid result), but dragging it
+    below them in `EffectSettings.order` composites it after instead.
+    """
+
+    enabled: bool = False
+    media_path: str | None = None
+    opacity: float = 1.0  # 0..1, on top of the source's own alpha channel
+
+
+@dataclass(frozen=True)
 class BassBlurSettings:
     """Bass-reactive zoom blur, driven by an externally supplied envelope."""
 
@@ -63,7 +78,9 @@ class GlitchSettings:
 #: order. `EffectSettings.order` may list them in any order/subset — this
 #: tuple is only the fallback and the set of valid keys. Add a new effect by
 #: adding a settings dataclass, a branch in apply_effect_chain, and a key here.
-DEFAULT_EFFECT_ORDER: tuple[str, ...] = ("bass_blur", "rotate", "vhs", "glitch")
+#: "overlay" defaults first so the other effects act on the overlaid result;
+#: dragging it below them applies it after instead.
+DEFAULT_EFFECT_ORDER: tuple[str, ...] = ("overlay", "bass_blur", "rotate", "vhs", "glitch")
 
 
 @dataclass(frozen=True)
@@ -78,6 +95,7 @@ class EffectSettings:
 
     background: BackgroundSettings = BackgroundSettings()
     order: tuple[str, ...] = DEFAULT_EFFECT_ORDER
+    overlay: OverlaySettings = OverlaySettings()
     bass_blur: BassBlurSettings = BassBlurSettings()
     rotate: RotateSettings = RotateSettings()
     vhs: VhsSettings = VhsSettings()
@@ -96,6 +114,33 @@ def build_background_frame(size: tuple[int, int], settings: BackgroundSettings) 
     canvas = np.empty((height, width, 3), dtype=np.uint8)
     canvas[:, :] = settings.color
     return canvas
+
+
+def fit_overlay_frame(rgba_frame: np.ndarray, size: tuple[int, int]) -> np.ndarray:
+    """Fit an RGBA frame into the given canvas size, centered on transparency."""
+    width, height = size
+    image = Image.fromarray(np.asarray(rgba_frame, dtype=np.uint8)).convert("RGBA")
+    fitted = ImageOps.contain(image, (width, height), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    canvas.alpha_composite(fitted, ((width - fitted.width) // 2, (height - fitted.height) // 2))
+    return np.array(canvas, dtype=np.uint8)
+
+
+def load_overlay_image(path: Path, size: tuple[int, int]) -> np.ndarray:
+    """Load a still image as an RGBA overlay frame fitted to `size`, alpha intact."""
+    with Image.open(path) as image:
+        rgba = np.array(image.convert("RGBA"), dtype=np.uint8)
+    return fit_overlay_frame(rgba, size)
+
+
+def apply_overlay(frame: np.ndarray, overlay_rgba: np.ndarray, opacity: float) -> np.ndarray:
+    """Alpha-composite an RGBA overlay frame onto `frame`, scaled by `opacity`."""
+    if opacity <= 0:
+        return frame
+    alpha = (overlay_rgba[..., 3:4].astype(np.float32) / 255.0) * opacity
+    rgb = overlay_rgba[..., :3].astype(np.float32)
+    blended = rgb * alpha + frame.astype(np.float32) * (1 - alpha)
+    return blended.astype(np.uint8)
 
 
 def apply_radial_blur(frame: np.ndarray, strength: float) -> np.ndarray:
@@ -173,11 +218,15 @@ def apply_effect_chain(
     settings: EffectSettings,
     background: np.ndarray,
     bass_strength: float | None = None,
+    overlay_frame: np.ndarray | None = None,
 ) -> np.ndarray:
     """Apply the effect cascade to one frame, in the order `settings.order` lists."""
     result = frame
     for key in settings.order:
-        if key == "bass_blur":
+        if key == "overlay":
+            if settings.overlay.enabled and overlay_frame is not None:
+                result = apply_overlay(result, overlay_frame, settings.overlay.opacity)
+        elif key == "bass_blur":
             if settings.bass_blur.enabled and bass_strength is not None:
                 result = apply_radial_blur(result, bass_strength)
         elif key == "rotate":

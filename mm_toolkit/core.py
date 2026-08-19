@@ -23,7 +23,13 @@ from PIL import Image, ImageOps
 from proglog import ProgressBarLogger
 from scipy.signal import butter, sosfiltfilt
 
-from mm_toolkit.effects import EffectSettings, apply_effect_chain, build_background_frame
+from mm_toolkit.effects import (
+    EffectSettings,
+    apply_effect_chain,
+    build_background_frame,
+    fit_overlay_frame,
+    load_overlay_image,
+)
 
 AUDIO_EXTENSIONS = {".wav", ".wave", ".aif", ".aiff", ".flac", ".mp3", ".m4a", ".aac", ".ogg"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
@@ -408,6 +414,23 @@ def render_track(
         if visual_clip is None:
             background = _load_artwork(cover_path, settings.size, settings.output_size, effect_background)
 
+        overlay_settings = settings.effects.overlay
+        overlay_clip: VideoFileClip | None = None
+        overlay_image: np.ndarray | None = None
+        if overlay_settings.enabled and overlay_settings.media_path:
+            overlay_path = Path(overlay_settings.media_path)
+            if overlay_path.suffix.lower() in VIDEO_EXTENSIONS:
+                overlay_clip = VideoFileClip(os.fspath(overlay_path), audio=False)
+            elif overlay_path.is_file():
+                overlay_image = load_overlay_image(overlay_path, canvas_size)
+
+        def overlay_frame_at(time: float) -> np.ndarray | None:
+            if overlay_clip is not None:
+                frame = overlay_clip.get_frame(time % overlay_clip.duration)
+                rgba = np.dstack([frame, np.full(frame.shape[:2], 255, dtype=np.uint8)])
+                return fit_overlay_frame(rgba, canvas_size)
+            return overlay_image
+
         def visual_frame(time: float) -> np.ndarray:
             if visual_clip is None:
                 assert background is not None
@@ -423,7 +446,8 @@ def render_track(
             if envelope is not None:
                 index = min(int(time * settings.fps), len(envelope) - 1)
                 bass_strength = float(envelope[index])
-            return apply_effect_chain(frame, time, settings.effects, effect_background, bass_strength)
+            overlay = overlay_frame_at(time) if overlay_settings.enabled else None
+            return apply_effect_chain(frame, time, settings.effects, effect_background, bass_strength, overlay)
 
         fade = min(settings.fade, actual_duration / 2)
         music_audio = AudioFileClip(os.fspath(trimmed))
@@ -463,6 +487,8 @@ def render_track(
                 music_audio.close()
             if visual_clip is not None:
                 visual_clip.close()
+            if overlay_clip is not None:
+                overlay_clip.close()
             if should_cancel():
                 output_path.unlink(missing_ok=True)
 
