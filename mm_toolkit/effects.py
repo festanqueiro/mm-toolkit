@@ -30,7 +30,7 @@ class BackgroundSettings:
 
 @dataclass(frozen=True)
 class OverlaySettings:
-    """A second image or video composited on top of the frame.
+    """A second image, centered and composited on top of the frame.
 
     Unlike `background` (the foundation, always applied first), overlay is a
     step in the reorderable cascade: by default it's applied before the

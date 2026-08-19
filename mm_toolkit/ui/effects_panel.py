@@ -44,9 +44,7 @@ from mm_toolkit.effects import (
 from mm_toolkit.ui.widgets import PathRow
 
 _DEFAULT_BACKGROUND_COLOR = (25, 25, 29)
-_OVERLAY_FILE_FILTER = (
-    "Images/Videos (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.mp4 *.mov *.m4v *.mkv *.avi *.webm)"
-)
+_OVERLAY_FILE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff)"
 
 # (key, display label, has a dry/wet amount slider)
 _EFFECT_DEFS: tuple[tuple[str, str, bool], ...] = (
@@ -159,7 +157,7 @@ class EffectsPanel(QWidget):
         self.rows["bass_blur"].checkbox.setChecked(True)
         self.rows["overlay"].amount.setValue(100)
 
-        self.overlay_media = PathRow("Choose overlay image or video", "file", _OVERLAY_FILE_FILTER)
+        self.overlay_media = PathRow("Choose overlay image", "file", _OVERLAY_FILE_FILTER)
 
         self.background_mode = QComboBox()
         self.background_mode.addItem("Solid color", "color")
@@ -181,7 +179,7 @@ class EffectsPanel(QWidget):
         self.background_form.addRow("Color", self.background_color_button)
         self.background_form.addRow("Image", self.background_image)
         self.background_form.addRow(QLabel("<b>Overlay</b>"))
-        self.background_form.addRow("Image/Video", self.overlay_media)
+        self.background_form.addRow("Image", self.overlay_media)
 
         # Two independent widgets so a caller can place the effect stack and
         # the Layers (background + overlay media) controls in separate
