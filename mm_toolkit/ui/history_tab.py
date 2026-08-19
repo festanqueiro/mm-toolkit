@@ -115,6 +115,10 @@ class HistoryTab(QWidget):
             return None
         return (record.get("created"), record.get("tool"), record.get("source"))
 
+    def select_latest(self) -> None:
+        if self.records:
+            self.jobs.setCurrentRow(0)
+
     def selected_record(self) -> dict | None:
         row = self.jobs.currentRow()
         if row < 0 and self.records:

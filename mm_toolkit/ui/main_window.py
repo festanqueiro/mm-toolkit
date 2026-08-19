@@ -7,8 +7,8 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon, QPalette
+from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QTabWidget
 
 from mm_toolkit.core import format_timestamp
@@ -47,12 +47,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
 
         self.unread_history_count = 0
-        self.last_output_folder: str | None = None
         self.tray_icon: QSystemTrayIcon | None = None
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray_icon = QSystemTrayIcon(QIcon(os.fspath(bundled_asset("mm-toolkit-icon.png"))), self)
             self.tray_icon.setToolTip("MM Toolkit")
-            self.tray_icon.messageClicked.connect(self.open_last_output_folder)
+            self.tray_icon.messageClicked.connect(self.on_tray_message_clicked)
             self.tray_icon.show()
 
         self.app_settings.changed.connect(self.apply_app_settings)
@@ -85,8 +84,6 @@ class MainWindow(QMainWindow):
 
     def notify_job_completed(self, record: dict) -> None:
         outputs = record.get("outputs", [])
-        if outputs:
-            self.last_output_folder = os.fspath(Path(outputs[0]).parent)
         job_label = {"promo": "Promo video", "clips": "Clips", "converter": "Conversion"}.get(
             record.get("tool"), "Job"
         )
@@ -100,9 +97,9 @@ class MainWindow(QMainWindow):
             self.unread_history_count += 1
             self.tabs.setTabText(self.history_tab_index, f"History ({self.unread_history_count})")
 
-    def open_last_output_folder(self) -> None:
-        if self.last_output_folder:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(self.last_output_folder))
+    def on_tray_message_clicked(self) -> None:
+        self.tabs.setCurrentIndex(self.history_tab_index)
+        self.history.select_latest()
 
     def on_tab_changed(self, index: int) -> None:
         if index == self.history_tab_index and self.unread_history_count:
