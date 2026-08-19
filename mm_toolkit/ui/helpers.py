@@ -58,13 +58,7 @@ def section_group(title: str, content_layout) -> QGroupBox:  # noqa: ANN001
     return group
 
 
-def collapsible_section(title: str, content_layout, expanded: bool = True) -> QGroupBox:
-    """A section_group look-alike whose body folds away under a click-to-toggle header.
-
-    Returned as a QGroupBox so callers can keep using `.setEnabled(...)` on it
-    exactly like `section_group` — Qt propagates enabled state to hidden
-    children too, so collapsing is purely a display concern.
-    """
+def _build_collapsible_section(title: str, content_layout, expanded: bool) -> tuple[QGroupBox, QToolButton]:
     group = QGroupBox()
     group.setStyleSheet(
         "QGroupBox {"
@@ -102,7 +96,46 @@ def collapsible_section(title: str, content_layout, expanded: bool = True) -> QG
     layout.setSpacing(6)
     layout.addWidget(toggle)
     layout.addWidget(content)
+    return group, toggle
+
+
+def collapsible_section(title: str, content_layout, expanded: bool = True) -> QGroupBox:
+    """A section_group look-alike whose body folds away under a click-to-toggle header.
+
+    Returned as a QGroupBox so callers can keep using `.setEnabled(...)` on it
+    exactly like `section_group` — Qt propagates enabled state to hidden
+    children too, so collapsing is purely a display concern. For a set of
+    sections where only one should be open at a time, use `Accordion`
+    instead — it calls this internally and adds that exclusivity.
+    """
+    group, _toggle = _build_collapsible_section(title, content_layout, expanded)
     return group
+
+
+class Accordion:
+    """A group of collapsible_section()s where opening one closes the others.
+
+    Prevents the "every section expanded at once" pile-up on tabs with many
+    optional groups — build each section via `.section(...)` instead of
+    calling `collapsible_section` directly, and they'll stay mutually
+    exclusive.
+    """
+
+    def __init__(self):
+        self._toggles: list[QToolButton] = []
+
+    def section(self, title: str, content_layout, expanded: bool = False) -> QGroupBox:
+        group, toggle = _build_collapsible_section(title, content_layout, expanded)
+        toggle.toggled.connect(lambda checked, toggle=toggle: self._on_toggled(toggle, checked))
+        self._toggles.append(toggle)
+        return group
+
+    def _on_toggled(self, toggle: QToolButton, checked: bool) -> None:
+        if not checked:
+            return
+        for other in self._toggles:
+            if other is not toggle and other.isChecked():
+                other.setChecked(False)
 
 
 def page_title(text: str) -> QLabel:

@@ -215,7 +215,12 @@ class EffectsPanel(QWidget):
         self.background_image.setVisible(is_image)
 
     def choose_background_color(self) -> None:
-        color = QColorDialog.getColor(QColor(*self.background_color), self, "Choose background color")
+        color = QColorDialog.getColor(
+            QColor(*self.background_color),
+            self,
+            "Choose background color",
+            QColorDialog.ColorDialogOption.DontUseNativeDialog,
+        )
         if color.isValid():
             self.background_color = (color.red(), color.green(), color.blue())
             self._update_background_color_swatch()
