@@ -391,6 +391,7 @@ class VideoGeneratorTab(QWidget):
             value = self.settings.value(key, "")
             if value and Path(value).exists():
                 row.edit.setText(value)
+        self._sync_music_fallback_directory()
         self.video_fade.setChecked(self.settings.value("promo/video_fade", True, type=bool))
         self.audio_fade.setChecked(self.settings.value("promo/audio_fade", True, type=bool))
         self.mute_original_video_audio.setChecked(
@@ -398,8 +399,18 @@ class VideoGeneratorTab(QWidget):
         )
 
     def on_music_changed(self, _path: str = "") -> None:
+        self._sync_music_fallback_directory()
         self.refresh_promo_tracks()
         self.validate()
+
+    def _sync_music_fallback_directory(self) -> None:
+        if not self.music.path:
+            return
+        music_path = Path(self.music.path).expanduser()
+        music_dir = os.fspath(music_path if music_path.is_dir() else music_path.parent)
+        self.cover.set_fallback_directory(music_dir)
+        self.effects_panel.background_image.set_fallback_directory(music_dir)
+        self.effects_panel.overlay_media.set_fallback_directory(music_dir)
 
     def refresh_promo_tracks(self) -> None:
         self.stop_promo_preview()

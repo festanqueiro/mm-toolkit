@@ -110,6 +110,7 @@ class PathRow(QWidget):
         self.dialog_title = dialog_title
         self.mode = mode
         self.file_filter = file_filter
+        self.fallback_dir = ""
         self.edit = QLineEdit()
         self.edit.setReadOnly(True)
         self.edit.setPlaceholderText("Nothing selected")
@@ -145,8 +146,12 @@ class PathRow(QWidget):
         self.edit.setText(path)
         self.changed.emit(path)
 
+    def set_fallback_directory(self, path: str) -> None:
+        """Directory the picker opens in when this row has no path of its own yet."""
+        self.fallback_dir = path
+
     def choose(self) -> None:
-        start = self.path or str(Path.home())
+        start = self.path or self.fallback_dir or str(Path.home())
         if self.mode in {"file", "file_or_directory"}:
             selected, _ = QFileDialog.getOpenFileName(self, self.dialog_title, start, self.file_filter)
         else:
