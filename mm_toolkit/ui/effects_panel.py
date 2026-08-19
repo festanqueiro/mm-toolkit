@@ -171,15 +171,22 @@ class EffectsPanel(QWidget):
         background_form.addRow("Color", self.background_color_button)
         background_form.addRow("Image", self.background_image)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        # Two independent widgets so a caller can place the effect stack and
+        # the Layers (background) controls in separate collapsible sections.
+        self.stack_widget = QWidget()
+        stack_layout = QVBoxLayout(self.stack_widget)
+        stack_layout.setContentsMargins(0, 0, 0, 0)
+        stack_layout.setSpacing(10)
         hint = QLabel("Drag rows to change the order effects are applied in.")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: palette(mid);")
-        layout.addWidget(hint)
-        layout.addWidget(self.list)
-        layout.addLayout(background_form)
+        stack_layout.addWidget(hint)
+        stack_layout.addWidget(self.list)
+
+        self.layers_widget = QWidget()
+        layers_layout = QVBoxLayout(self.layers_widget)
+        layers_layout.setContentsMargins(0, 0, 0, 0)
+        layers_layout.addLayout(background_form)
 
         self.background_mode.currentIndexChanged.connect(self._sync_background_visibility)
         self.background_mode.currentIndexChanged.connect(self.changed)

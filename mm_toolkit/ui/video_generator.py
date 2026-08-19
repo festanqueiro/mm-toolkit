@@ -47,7 +47,7 @@ from mm_toolkit.core import (
     validate_visual,
 )
 from mm_toolkit.ui.effects_panel import EffectsPanel
-from mm_toolkit.ui.helpers import page_title, section_group, show_completion, show_error
+from mm_toolkit.ui.helpers import collapsible_section, page_title, show_completion, show_error
 from mm_toolkit.ui.style import (
     ICON_BUTTON_STYLE,
     TIMESTAMP_BUTTON_STYLE,
@@ -344,19 +344,22 @@ class VideoGeneratorTab(QWidget):
         feature_columns = QHBoxLayout()
         feature_columns.setSpacing(14)
         input_column = QVBoxLayout()
-        self.promo_input_group = section_group("Input", input_form)
-        self.promo_input_group.setMinimumHeight(250)
+        self.promo_input_group = collapsible_section("Input", input_form)
         input_column.addWidget(self.promo_input_group)
-        self.promo_clips_group = section_group("Audio timestamps", promo_clips_layout)
+        self.promo_clips_group = collapsible_section("Audio timestamps", promo_clips_layout)
         input_column.addWidget(self.promo_clips_group, 1)
         input_column.addStretch()
         settings_column = QVBoxLayout()
         effects_panel_layout = QVBoxLayout()
-        effects_panel_layout.addWidget(self.effects_panel)
-        self.visual_effects_group = section_group("Visual Effects", effects_panel_layout)
-        self.post_effects_group = section_group("Post-Effects", effects_form)
-        self.output_group = section_group("Output", output_form)
+        effects_panel_layout.addWidget(self.effects_panel.stack_widget)
+        self.visual_effects_group = collapsible_section("Visual Effects", effects_panel_layout, expanded=False)
+        layers_layout = QVBoxLayout()
+        layers_layout.addWidget(self.effects_panel.layers_widget)
+        self.layers_group = collapsible_section("Layers", layers_layout, expanded=False)
+        self.post_effects_group = collapsible_section("Post-Effects", effects_form, expanded=False)
+        self.output_group = collapsible_section("Output", output_form)
         settings_column.addWidget(self.visual_effects_group)
+        settings_column.addWidget(self.layers_group)
         settings_column.addWidget(self.post_effects_group)
         settings_column.addWidget(self.output_group)
         settings_column.addStretch()
@@ -632,6 +635,7 @@ class VideoGeneratorTab(QWidget):
         self.promo_clips_group.setEnabled(music_ok and editable)
         downstream_ready = music_ok and cover_ok and editable
         self.visual_effects_group.setEnabled(downstream_ready)
+        self.layers_group.setEnabled(downstream_ready)
         self.post_effects_group.setEnabled(downstream_ready)
         self.output_group.setEnabled(downstream_ready)
         output_path = Path(self.output.path).expanduser() if self.output.path else None
