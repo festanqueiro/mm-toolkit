@@ -22,21 +22,6 @@ def show_error(parent: QWidget, title: str, message: str, details: str) -> None:
     box.exec()
 
 
-def show_completion(parent: QWidget, title: str, outputs: list[str]) -> None:
-    if not outputs:
-        QMessageBox.information(parent, title, "No new files were created.")
-        return
-    box = QMessageBox(QMessageBox.Icon.Information, title, f"Created {len(outputs)} file{'s' if len(outputs) != 1 else ''}.", parent=parent)
-    open_file = box.addButton("Open First File", QMessageBox.ButtonRole.ActionRole)
-    show_folder = box.addButton("Show in Folder", QMessageBox.ButtonRole.ActionRole)
-    box.addButton(QMessageBox.StandardButton.Ok)
-    box.exec()
-    if box.clickedButton() is open_file:
-        open_preview(parent, outputs[0])
-    elif box.clickedButton() is show_folder:
-        QDesktopServices.openUrl(QUrl.fromLocalFile(os.fspath(Path(outputs[0]).parent)))
-
-
 def section_group(title: str, content_layout) -> QGroupBox:  # noqa: ANN001
     group = QGroupBox(title)
     group.setLayout(content_layout)

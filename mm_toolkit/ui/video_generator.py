@@ -47,7 +47,7 @@ from mm_toolkit.core import (
     validate_visual,
 )
 from mm_toolkit.ui.effects_panel import EffectsPanel
-from mm_toolkit.ui.helpers import Accordion, page_title, show_completion, show_error
+from mm_toolkit.ui.helpers import Accordion, page_title, show_error
 from mm_toolkit.ui.style import (
     ICON_BUTTON_STYLE,
     TIMESTAMP_BUTTON_STYLE,
@@ -858,8 +858,6 @@ class VideoGeneratorTab(QWidget):
             "profile": list(profile) if profile else None,
             "outputs": outputs,
         })
-        if self.settings.value("general/notify_finished", True, type=bool):
-            show_completion(self, "Videos generated", outputs)
 
     def on_failure(self, message: str, details: str) -> None:
         show_error(self, "Generation failed", message, details)

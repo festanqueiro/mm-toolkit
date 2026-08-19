@@ -37,7 +37,7 @@ from mm_toolkit.core import (
     parse_timestamp,
     validate_media_source,
 )
-from mm_toolkit.ui.helpers import page_title, section_group, show_completion, show_error
+from mm_toolkit.ui.helpers import page_title, section_group, show_error
 from mm_toolkit.ui.style import ICON_BUTTON_STYLE, TIMESTAMP_BUTTON_STYLE, TIMESTAMP_FIELD_STYLE, material_icon
 from mm_toolkit.ui.widgets import MediaTransport, PathRow, VideoPreviewWidget
 
@@ -612,8 +612,6 @@ class ClipsTab(QWidget):
             ],
             "outputs": outputs,
         })
-        if self.settings.value("general/notify_finished", True, type=bool):
-            show_completion(self, "Clips created", outputs)
 
     def on_failure(self, message: str, details: str) -> None:
         show_error(self, "Clip creation failed", message, details)

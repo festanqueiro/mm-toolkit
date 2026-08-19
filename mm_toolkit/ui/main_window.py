@@ -7,9 +7,9 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QIcon, QPalette
-from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QTabWidget
+from PySide6.QtCore import QSettings, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon, QPalette
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QTabWidget
 
 from mm_toolkit.core import format_timestamp
 from mm_toolkit.ui.about_tab import AboutTab
@@ -40,16 +40,27 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.video_generator, material_icon("music_video", icon_color), "Video Generator")
         self.tabs.addTab(self.clips, material_icon("content_cut", icon_color), "Media Cutter")
         self.tabs.addTab(self.converter, material_icon("swap_horiz", icon_color), "Media Converter")
+        self.history_tab_index = self.tabs.count()
         self.tabs.addTab(self.history, material_icon("history", icon_color), "History")
         self.tabs.addTab(self.app_settings, material_icon("settings", icon_color), "Settings")
         self.tabs.addTab(self.about, material_icon("info", icon_color), "About")
         self.setCentralWidget(self.tabs)
+
+        self.unread_history_count = 0
+        self.last_output_folder: str | None = None
+        self.tray_icon: QSystemTrayIcon | None = None
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray_icon = QSystemTrayIcon(QIcon(os.fspath(bundled_asset("mm-toolkit-icon.png"))), self)
+            self.tray_icon.setToolTip("MM Toolkit")
+            self.tray_icon.messageClicked.connect(self.open_last_output_folder)
+            self.tray_icon.show()
 
         self.app_settings.changed.connect(self.apply_app_settings)
         self.video_generator.job_completed.connect(self.add_history)
         self.clips.job_completed.connect(self.add_history)
         self.converter.job_completed.connect(self.add_history)
         self.history.load_requested.connect(self.load_history_job)
+        self.tabs.currentChanged.connect(self.on_tab_changed)
         self.apply_app_settings()
 
     def apply_app_settings(self) -> None:
@@ -70,6 +81,33 @@ class MainWindow(QMainWindow):
         records.insert(0, record)
         self.settings.setValue("history/jobs", json.dumps(records[:20]))
         self.history.refresh()
+        self.notify_job_completed(record)
+
+    def notify_job_completed(self, record: dict) -> None:
+        outputs = record.get("outputs", [])
+        if outputs:
+            self.last_output_folder = os.fspath(Path(outputs[0]).parent)
+        job_label = {"promo": "Promo video", "clips": "Clips", "converter": "Conversion"}.get(
+            record.get("tool"), "Job"
+        )
+        message = f"Created {len(outputs)} file{'s' if len(outputs) != 1 else ''}." if outputs else "Finished."
+        if (
+            self.tray_icon is not None
+            and self.settings.value("general/notify_finished", True, type=bool)
+        ):
+            self.tray_icon.showMessage(f"{job_label} finished", message, QSystemTrayIcon.MessageIcon.Information, 5000)
+        if self.tabs.currentIndex() != self.history_tab_index:
+            self.unread_history_count += 1
+            self.tabs.setTabText(self.history_tab_index, f"History ({self.unread_history_count})")
+
+    def open_last_output_folder(self) -> None:
+        if self.last_output_folder:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(self.last_output_folder))
+
+    def on_tab_changed(self, index: int) -> None:
+        if index == self.history_tab_index and self.unread_history_count:
+            self.unread_history_count = 0
+            self.tabs.setTabText(self.history_tab_index, "History")
 
     def load_history_job(self, record: dict) -> None:
         if record.get("tool") == "promo":

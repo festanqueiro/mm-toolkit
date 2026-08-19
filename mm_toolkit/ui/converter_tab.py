@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from mm_toolkit.core import AUDIO_OUTPUT_FORMATS, CancelledError, VIDEO_OUTPUT_FORMATS, convert_media, media_kind
-from mm_toolkit.ui.helpers import open_preview, page_title, section_group, show_completion, show_error
+from mm_toolkit.ui.helpers import open_preview, page_title, section_group, show_error
 from mm_toolkit.ui.widgets import PathRow
 
 
@@ -316,8 +316,6 @@ class ConverterTab(QWidget):
             "bitrate": self.mp3_bitrate.currentData(),
             "outputs": outputs,
         })
-        if self.settings.value("general/notify_finished", True, type=bool):
-            show_completion(self, "Conversion finished", outputs)
 
     def on_failure(self, message: str, details: str) -> None:
         show_error(self, "Conversion failed", message, details)
