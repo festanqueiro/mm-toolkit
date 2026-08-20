@@ -1,7 +1,7 @@
 """Reusable, platform-neutral video effects.
 
 Effects are pure functions over full RGB uint8 frames so the same cascade can
-be reused by any render pipeline (currently the Video Generator's promo
+be reused by any render pipeline (currently the Video Creator's promo
 renderer in core.py), not just the tab it was first built for.
 """
 

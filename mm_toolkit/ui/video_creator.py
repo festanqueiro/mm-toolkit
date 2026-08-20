@@ -1,4 +1,4 @@
-"""Video Generator tab: render a promo video from audio + artwork/video."""
+"""Video Creator tab: render a promo video from audio + artwork/video."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from PySide6.QtCore import QSettings, QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QImage, QPalette, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -186,7 +187,7 @@ class DropDetectionDialog(QDialog):
         layout.addWidget(buttons)
 
 
-class VideoGeneratorTab(QWidget):
+class VideoCreatorTab(QWidget):
     job_completed = Signal(object)
     view_in_history = Signal()
 
@@ -196,7 +197,7 @@ class VideoGeneratorTab(QWidget):
         self.worker: RenderWorker | None = None
         self.analysis_worker: DropDetectionWorker | None = None
 
-        title = page_title("Video Generator")
+        title = page_title("Video Creator")
         subtitle = QLabel("Turn audio plus an image or video into a new music video at the visual's native resolution.")
         subtitle.setWordWrap(True)
 
@@ -233,6 +234,30 @@ class VideoGeneratorTab(QWidget):
         self.mute_original_video_audio_label.setVisible(False)
         self.promo_tracks = QTableWidget(0, 4)
         self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration", ""])
+        self.promo_tracks.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.promo_tracks.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.promo_tracks.setAlternatingRowColors(True)
+        self.promo_tracks.setShowGrid(False)
+        self.promo_tracks.verticalHeader().setVisible(False)
+        self.promo_tracks.setStyleSheet(
+            "QTableWidget {"
+            "  border: 1px solid rgba(127, 127, 127, 0.35);"
+            "  border-radius: 8px;"
+            "  background: palette(base);"
+            "  alternate-background-color: palette(alternate-base);"
+            "  selection-background-color: palette(midlight);"
+            "  selection-color: palette(text);"
+            "}"
+            "QHeaderView::section {"
+            "  background: palette(midlight);"
+            "  color: palette(text);"
+            "  border: 0;"
+            "  border-bottom: 1px solid palette(mid);"
+            "  padding: 9px 8px;"
+            "  font-weight: 700;"
+            "}"
+        )
+        self.promo_tracks.horizontalHeader().setStretchLastSection(False)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         self.promo_tracks.setColumnWidth(0, 120)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -350,7 +375,8 @@ class VideoGeneratorTab(QWidget):
         self.promo_input_group = input_accordion.section("Input", input_form, expanded=True)
         input_column.addWidget(self.promo_input_group)
         self.promo_clips_group = input_accordion.section("Audio timestamps", promo_clips_layout)
-        input_column.addWidget(self.promo_clips_group, 1)
+        input_column.addWidget(self.promo_clips_group)
+        input_accordion.bind_stretch(self.promo_clips_group, input_column)
         input_column.addStretch()
         settings_column = QVBoxLayout()
         settings_accordion = Accordion()

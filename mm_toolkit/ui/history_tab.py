@@ -88,7 +88,7 @@ class HistoryTab(QWidget):
         self.jobs.clear()
         for record in self.records:
             tool = {
-                "promo": "Video Generator",
+                "promo": "Video Creator",
                 "clips": "Media Cutter",
                 "converter": "Media Converter",
             }.get(record.get("tool"), "Media Tool")

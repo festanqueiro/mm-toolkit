@@ -4,7 +4,7 @@ Wraps `mm_toolkit.effects.EffectSettings` in Qt controls (a draggable stack
 of Overlay / Bass Blur / Rotate / VHS / Glitch rows, plus a Background
 layer) with QSettings persistence, so any tab can drop in
 `EffectsPanel(settings, "some_prefix")` to gain the same effect cascade the
-Video Generator uses, without duplicating widget wiring. New effects are
+Video Creator uses, without duplicating widget wiring. New effects are
 added by extending `_EFFECT_DEFS` and `mm_toolkit.effects.apply_effect_chain`
 together.
 """
