@@ -108,11 +108,13 @@ class Accordion:
 
     def __init__(self):
         self._toggles: list[QToolButton] = []
+        self._toggle_for_group: dict[QGroupBox, QToolButton] = {}
 
     def section(self, title: str, content_layout, expanded: bool = False) -> QGroupBox:
         group, toggle = _build_collapsible_section(title, content_layout, expanded)
         toggle.toggled.connect(lambda checked, toggle=toggle: self._on_toggled(toggle, checked))
         self._toggles.append(toggle)
+        self._toggle_for_group[group] = toggle
         return group
 
     def _on_toggled(self, toggle: QToolButton, checked: bool) -> None:
@@ -121,6 +123,21 @@ class Accordion:
         for other in self._toggles:
             if other is not toggle and other.isChecked():
                 other.setChecked(False)
+
+    def bind_stretch(self, group: QGroupBox, layout, expanded_stretch: int = 1) -> None:
+        """Give `group` a stretch factor in `layout` only while it's expanded.
+
+        Without this, a section holding a widget with a natural Expanding
+        size policy (e.g. a table) keeps claiming leftover space even while
+        collapsed, instead of shrinking to just its header height.
+        """
+        toggle = self._toggle_for_group[group]
+
+        def sync(checked: bool) -> None:
+            layout.setStretchFactor(group, expanded_stretch if checked else 0)
+
+        toggle.toggled.connect(sync)
+        sync(toggle.isChecked())
 
 
 def page_title(text: str) -> QLabel:
