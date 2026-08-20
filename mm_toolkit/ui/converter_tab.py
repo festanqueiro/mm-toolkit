@@ -25,8 +25,8 @@ from PySide6.QtWidgets import (
 )
 
 from mm_toolkit.core import AUDIO_OUTPUT_FORMATS, CancelledError, VIDEO_OUTPUT_FORMATS, convert_media, media_kind
-from mm_toolkit.ui.helpers import open_preview, page_title, section_group, show_completion, show_error
-from mm_toolkit.ui.widgets import PathRow
+from mm_toolkit.ui.helpers import open_preview, page_title, section_group, show_error
+from mm_toolkit.ui.widgets import ClickableLabel, PathRow
 
 
 class ConverterWorker(QThread):
@@ -65,6 +65,7 @@ class ConverterWorker(QThread):
 
 class ConverterTab(QWidget):
     job_completed = Signal(object)
+    view_in_history = Signal()
 
     def __init__(self, settings: QSettings):
         super().__init__()
@@ -112,7 +113,8 @@ class ConverterTab(QWidget):
         output_form.addRow("Export folder", self.output)
         output_form.addRow("", self.output_status)
 
-        self.progress_status = QLabel("")
+        self.progress_status = ClickableLabel("")
+        self.progress_status.clicked.connect(self.view_in_history)
         self.progress_status.hide()
         self.progress = QProgressBar()
         self.progress.hide()
@@ -293,6 +295,7 @@ class ConverterTab(QWidget):
         self.worker.finished.connect(self.worker_finished)
         self.progress.setValue(0)
         self.progress.show()
+        self.progress_status.set_clickable(False)
         self.progress_status.setText("Preparing conversion…")
         self.progress_status.show()
         self.set_inputs_enabled(False)
@@ -316,8 +319,7 @@ class ConverterTab(QWidget):
             "bitrate": self.mp3_bitrate.currentData(),
             "outputs": outputs,
         })
-        if self.settings.value("general/notify_finished", True, type=bool):
-            show_completion(self, "Conversion finished", outputs)
+        self.progress_status.set_clickable(bool(outputs))
 
     def on_failure(self, message: str, details: str) -> None:
         show_error(self, "Conversion failed", message, details)

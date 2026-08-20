@@ -12,7 +12,7 @@ Available for macOS and Windows.
 
 ## Features
 
-- **Video Generator:** turn audio plus artwork or video into ready-to-share MP4s, with editable timestamps, clip listening, drop detection, visual effects, fades, and multiple aspect ratios.
+- **Video Creator:** turn audio plus artwork or video into ready-to-share MP4s, with editable timestamps, clip listening, drop detection, visual effects, fades, and multiple aspect ratios.
 - **Media Cutter:** preview audio or video, mark precise start/end points, and export multiple titled clips.
 - **Media Converter:** batch-convert common audio and video formats with progress tracking and safe cancellation.
 - **Workflow tools:** shared export settings, filename templates, overwrite controls, recent-job history, and update notifications.

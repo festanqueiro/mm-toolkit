@@ -15,6 +15,28 @@ from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPush
 from mm_toolkit.core import format_timestamp
 
 
+class ClickableLabel(QLabel):
+    """A QLabel that emits `clicked` on release, with a pointing-hand cursor
+    only while `clickable` is set — used for status text that becomes an
+    actionable link once a job finishes, e.g. "Finished 1 video"."""
+
+    clicked = Signal()
+
+    def __init__(self, text: str = ""):
+        super().__init__(text)
+        self._clickable = False
+
+    def set_clickable(self, clickable: bool) -> None:
+        self._clickable = clickable
+        self.setCursor(Qt.CursorShape.PointingHandCursor if clickable else Qt.CursorShape.ArrowCursor)
+        self.setStyleSheet("QLabel { color: palette(link); text-decoration: underline; }" if clickable else "")
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802, ANN001
+        if self._clickable and event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.pos()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class VideoPreviewWidget(QVideoWidget):
     """Responsive 16:9 preview surface that preserves the source aspect ratio."""
 
@@ -110,6 +132,7 @@ class PathRow(QWidget):
         self.dialog_title = dialog_title
         self.mode = mode
         self.file_filter = file_filter
+        self.fallback_dir = ""
         self.edit = QLineEdit()
         self.edit.setReadOnly(True)
         self.edit.setPlaceholderText("Nothing selected")
@@ -145,8 +168,16 @@ class PathRow(QWidget):
         self.edit.setText(path)
         self.changed.emit(path)
 
+    def set_fallback_directory(self, path: str) -> None:
+        """Directory the picker opens in when this row has no path of its own yet."""
+        self.fallback_dir = path
+
     def choose(self) -> None:
-        start = self.path or str(Path.home())
+        # Native dialog: macOS remembers the last folder visited across all
+        # pickers in the app, which is the "just remember where I was"
+        # behavior users expect. `start` only matters the very first time a
+        # picker opens, before that memory exists.
+        start = self.path or self.fallback_dir or str(Path.home())
         if self.mode in {"file", "file_or_directory"}:
             selected, _ = QFileDialog.getOpenFileName(self, self.dialog_title, start, self.file_filter)
         else:
