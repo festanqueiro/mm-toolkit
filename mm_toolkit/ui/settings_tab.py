@@ -23,7 +23,7 @@ class SettingsTab(QWidget):
         subtitle = QLabel("Defaults shared by all Media Tools features.")
         self.default_output = PathRow("Choose default export folder", "directory")
         self.output_status = QLabel("")
-        self.notify_finished = QCheckBox("Show a popup when processing finishes")
+        self.notify_finished = QCheckBox("Send a notification when processing finishes")
         self.notify_finished.setChecked(
             self.settings.value("general/notify_finished", True, type=bool)
         )

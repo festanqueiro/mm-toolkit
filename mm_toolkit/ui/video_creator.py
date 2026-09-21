@@ -1,4 +1,4 @@
-"""Video Generator tab: render a promo video from audio + artwork/video."""
+"""Video Creator tab: render a promo video from audio + artwork/video."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from PySide6.QtCore import QSettings, QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QImage, QPalette, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -46,14 +47,15 @@ from mm_toolkit.core import (
     parse_timestamp,
     validate_visual,
 )
-from mm_toolkit.ui.helpers import page_title, section_group, show_completion, show_error
+from mm_toolkit.ui.effects_panel import EffectsPanel
+from mm_toolkit.ui.helpers import Accordion, page_title, show_error
 from mm_toolkit.ui.style import (
     ICON_BUTTON_STYLE,
     TIMESTAMP_BUTTON_STYLE,
     TIMESTAMP_FIELD_STYLE,
     material_icon,
 )
-from mm_toolkit.ui.widgets import PathRow
+from mm_toolkit.ui.widgets import ClickableLabel, PathRow
 
 
 class RenderWorker(QThread):
@@ -185,8 +187,9 @@ class DropDetectionDialog(QDialog):
         layout.addWidget(buttons)
 
 
-class VideoGeneratorTab(QWidget):
+class VideoCreatorTab(QWidget):
     job_completed = Signal(object)
+    view_in_history = Signal()
 
     def __init__(self, settings: QSettings):
         super().__init__()
@@ -194,7 +197,7 @@ class VideoGeneratorTab(QWidget):
         self.worker: RenderWorker | None = None
         self.analysis_worker: DropDetectionWorker | None = None
 
-        title = page_title("Video Generator")
+        title = page_title("Video Creator")
         subtitle = QLabel("Turn audio plus an image or video into a new music video at the visual's native resolution.")
         subtitle.setWordWrap(True)
 
@@ -219,8 +222,7 @@ class VideoGeneratorTab(QWidget):
         self.artwork_preview.setFixedSize(104, 104)
         self.artwork_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.artwork_preview.hide()
-        self.bass_effect = QCheckBox("Bass-reactive zoom blur")
-        self.bass_effect.setChecked(True)
+        self.effects_panel = EffectsPanel(self.settings, "promo")
         self.video_fade = QCheckBox("Fade video in/out")
         self.video_fade.setChecked(True)
         self.audio_fade = QCheckBox("Fade audio in/out")
@@ -232,6 +234,30 @@ class VideoGeneratorTab(QWidget):
         self.mute_original_video_audio_label.setVisible(False)
         self.promo_tracks = QTableWidget(0, 4)
         self.promo_tracks.setHorizontalHeaderLabels(["Audio", "Start", "Duration", ""])
+        self.promo_tracks.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.promo_tracks.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.promo_tracks.setAlternatingRowColors(True)
+        self.promo_tracks.setShowGrid(False)
+        self.promo_tracks.verticalHeader().setVisible(False)
+        self.promo_tracks.setStyleSheet(
+            "QTableWidget {"
+            "  border: 1px solid rgba(127, 127, 127, 0.35);"
+            "  border-radius: 8px;"
+            "  background: palette(base);"
+            "  alternate-background-color: palette(alternate-base);"
+            "  selection-background-color: palette(midlight);"
+            "  selection-color: palette(text);"
+            "}"
+            "QHeaderView::section {"
+            "  background: palette(midlight);"
+            "  color: palette(text);"
+            "  border: 0;"
+            "  border-bottom: 1px solid palette(mid);"
+            "  padding: 9px 8px;"
+            "  font-weight: 700;"
+            "}"
+        )
+        self.promo_tracks.horizontalHeader().setStretchLastSection(False)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         self.promo_tracks.setColumnWidth(0, 120)
         self.promo_tracks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -296,7 +322,6 @@ class VideoGeneratorTab(QWidget):
 
         effects_form = QFormLayout()
         effects_form.setSpacing(12)
-        effects_form.addRow("Visual effect", self.bass_effect)
         effects_form.addRow(self.mute_original_video_audio_label, self.mute_original_video_audio)
         effects_form.addRow("Video", self.video_fade)
         effects_form.addRow("Audio", self.audio_fade)
@@ -334,8 +359,9 @@ class VideoGeneratorTab(QWidget):
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
         self.progress.hide()
-        self.progress_status = QLabel("")
+        self.progress_status = ClickableLabel("")
         self.progress_status.hide()
+        self.progress_status.clicked.connect(self.view_in_history)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
@@ -345,15 +371,25 @@ class VideoGeneratorTab(QWidget):
         feature_columns = QHBoxLayout()
         feature_columns.setSpacing(14)
         input_column = QVBoxLayout()
-        self.promo_input_group = section_group("Input", input_form)
-        self.promo_input_group.setMinimumHeight(250)
+        input_accordion = Accordion()
+        self.promo_input_group = input_accordion.section("Input", input_form, expanded=True)
         input_column.addWidget(self.promo_input_group)
-        self.promo_clips_group = section_group("Audio timestamps", promo_clips_layout)
-        input_column.addWidget(self.promo_clips_group, 1)
+        self.promo_clips_group = input_accordion.section("Audio timestamps", promo_clips_layout)
+        input_column.addWidget(self.promo_clips_group)
+        input_accordion.bind_stretch(self.promo_clips_group, input_column)
         input_column.addStretch()
         settings_column = QVBoxLayout()
-        self.post_effects_group = section_group("Post-Effects", effects_form)
-        self.output_group = section_group("Output", output_form)
+        settings_accordion = Accordion()
+        effects_panel_layout = QVBoxLayout()
+        effects_panel_layout.addWidget(self.effects_panel.stack_widget)
+        self.visual_effects_group = settings_accordion.section("Visual Effects", effects_panel_layout)
+        layers_layout = QVBoxLayout()
+        layers_layout.addWidget(self.effects_panel.layers_widget)
+        self.layers_group = settings_accordion.section("Layers", layers_layout)
+        self.post_effects_group = settings_accordion.section("Post-Effects", effects_form)
+        self.output_group = settings_accordion.section("Output", output_form, expanded=True)
+        settings_column.addWidget(self.visual_effects_group)
+        settings_column.addWidget(self.layers_group)
         settings_column.addWidget(self.post_effects_group)
         settings_column.addWidget(self.output_group)
         settings_column.addStretch()
@@ -383,7 +419,7 @@ class VideoGeneratorTab(QWidget):
             value = self.settings.value(key, "")
             if value and Path(value).exists():
                 row.edit.setText(value)
-        self.bass_effect.setChecked(self.settings.value("promo/bass_effect", True, type=bool))
+        self._sync_music_fallback_directory()
         self.video_fade.setChecked(self.settings.value("promo/video_fade", True, type=bool))
         self.audio_fade.setChecked(self.settings.value("promo/audio_fade", True, type=bool))
         self.mute_original_video_audio.setChecked(
@@ -391,8 +427,18 @@ class VideoGeneratorTab(QWidget):
         )
 
     def on_music_changed(self, _path: str = "") -> None:
+        self._sync_music_fallback_directory()
         self.refresh_promo_tracks()
         self.validate()
+
+    def _sync_music_fallback_directory(self) -> None:
+        if not self.music.path:
+            return
+        music_path = Path(self.music.path).expanduser()
+        music_dir = os.fspath(music_path if music_path.is_dir() else music_path.parent)
+        self.cover.set_fallback_directory(music_dir)
+        self.effects_panel.background_image.set_fallback_directory(music_dir)
+        self.effects_panel.overlay_media.set_fallback_directory(music_dir)
 
     def refresh_promo_tracks(self) -> None:
         self.stop_promo_preview()
@@ -629,6 +675,8 @@ class VideoGeneratorTab(QWidget):
         editable = self.worker is None
         self.promo_clips_group.setEnabled(music_ok and editable)
         downstream_ready = music_ok and cover_ok and editable
+        self.visual_effects_group.setEnabled(downstream_ready)
+        self.layers_group.setEnabled(downstream_ready)
         self.post_effects_group.setEnabled(downstream_ready)
         self.output_group.setEnabled(downstream_ready)
         output_path = Path(self.output.path).expanduser() if self.output.path else None
@@ -715,7 +763,7 @@ class VideoGeneratorTab(QWidget):
             self.stop_promo_preview()
         for row in (self.music, self.cover, self.output):
             row.set_enabled(enabled)
-        self.bass_effect.setEnabled(enabled)
+        self.effects_panel.set_enabled(enabled)
         self.video_fade.setEnabled(enabled)
         self.audio_fade.setEnabled(enabled)
         self.mute_original_video_audio.setEnabled(
@@ -744,7 +792,7 @@ class VideoGeneratorTab(QWidget):
         self.music.set_path("")
         self.cover.set_path("")
         self.output.set_path(self.settings.value("general/default_output", ""))
-        self.bass_effect.setChecked(True)
+        self.effects_panel.clear()
         self.video_fade.setChecked(True)
         self.audio_fade.setChecked(True)
         self.mute_original_video_audio.setChecked(True)
@@ -758,7 +806,7 @@ class VideoGeneratorTab(QWidget):
         self.progress.hide()
         self.progress_status.clear()
         self.progress_status.hide()
-        for key in ("music", "cover", "output", "promo/bass_effect", "promo/video_fade", "promo/audio_fade", "promo/mute_original_video_audio"):
+        for key in ("music", "cover", "output", "promo/video_fade", "promo/audio_fade", "promo/mute_original_video_audio"):
             self.settings.remove(key)
         self.validate()
 
@@ -769,10 +817,11 @@ class VideoGeneratorTab(QWidget):
         track_options, _ = self.promo_track_options()
         for key, value in (("music", self.music.path), ("cover", self.cover.path), ("output", self.output.path)):
             self.settings.setValue(key, value)
+        effect_settings = self.effects_panel.effect_settings()
         render_settings = RenderSettings(
             fps=self.fps.value(),
             duration=self.duration.value(),
-            bass_effect=self.bass_effect.isChecked(),
+            bass_effect=effect_settings.bass_blur.enabled,
             mute_original_video_audio=self.mute_original_video_audio.isChecked(),
             video_fade=self.video_fade.isChecked(),
             audio_fade=self.audio_fade.isChecked(),
@@ -780,8 +829,9 @@ class VideoGeneratorTab(QWidget):
             preset=self.encoding_speed.currentData(),
             crf=self.crf.value(),
             audio_bitrate=self.audio_bitrate.currentData(),
+            effects=effect_settings,
         )
-        self.settings.setValue("promo/bass_effect", self.bass_effect.isChecked())
+        self.effects_panel.save()
         self.settings.setValue("promo/video_fade", self.video_fade.isChecked())
         self.settings.setValue("promo/audio_fade", self.audio_fade.isChecked())
         self.settings.setValue("promo/mute_original_video_audio", self.mute_original_video_audio.isChecked())
@@ -801,6 +851,7 @@ class VideoGeneratorTab(QWidget):
         self.worker.finished.connect(self.worker_finished)
         self.progress.setValue(0)
         self.progress.show()
+        self.progress_status.set_clickable(False)
         self.progress_status.setText("Preparing…")
         self.progress_status.show()
         self.set_inputs_enabled(False)
@@ -816,13 +867,15 @@ class VideoGeneratorTab(QWidget):
     def on_success(self, outputs: list[str]) -> None:
         profile = self.profile.currentData()
         track_options, _ = self.promo_track_options()
+        effects_state = self.effects_panel.state_dict()
         self.job_completed.emit({
             "tool": "promo",
             "created": datetime.now().isoformat(timespec="seconds"),
             "source": self.music.path,
             "cover": self.cover.path,
             "output": self.output.path,
-            "bass_effect": self.bass_effect.isChecked(),
+            "bass_effect": effects_state["bass_blur"]["enabled"],
+            "effects": effects_state,
             "video_fade": self.video_fade.isChecked(),
             "audio_fade": self.audio_fade.isChecked(),
             "mute_original_video_audio": self.mute_original_video_audio.isChecked(),
@@ -834,8 +887,7 @@ class VideoGeneratorTab(QWidget):
             "profile": list(profile) if profile else None,
             "outputs": outputs,
         })
-        if self.settings.value("general/notify_finished", True, type=bool):
-            show_completion(self, "Videos generated", outputs)
+        self.progress_status.set_clickable(bool(outputs))
 
     def on_failure(self, message: str, details: str) -> None:
         show_error(self, "Generation failed", message, details)
