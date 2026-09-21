@@ -186,19 +186,33 @@ def media_kind(path: str | Path) -> str | None:
     return None
 
 
+def _ffmpeg_runs(executable: str) -> bool:
+    """Return True if the binary actually launches (a broken Homebrew install aborts in dyld)."""
+    try:
+        result = subprocess.run([executable, "-version"], capture_output=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
 def require_ffmpeg() -> str:
-    executable = shutil.which("ffmpeg")
-    if executable:
-        return executable
-    for candidate in (Path("/opt/homebrew/bin/ffmpeg"), Path("/usr/local/bin/ffmpeg")):
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return os.fspath(candidate)
+    candidates: list[str] = []
+    found = shutil.which("ffmpeg")
+    if found:
+        candidates.append(found)
+    for path in (Path("/opt/homebrew/bin/ffmpeg"), Path("/usr/local/bin/ffmpeg")):
+        if path.is_file() and os.access(path, os.X_OK):
+            candidates.append(os.fspath(path))
     try:
         bundled = imageio_ffmpeg.get_ffmpeg_exe()
         if bundled and Path(bundled).is_file():
-            return bundled
+            candidates.append(bundled)
     except Exception as exc:
-        raise RuntimeError("FFmpeg could not be located by the application.") from exc
+        if not candidates:
+            raise RuntimeError("FFmpeg could not be located by the application.") from exc
+    for candidate in dict.fromkeys(candidates):
+        if _ffmpeg_runs(candidate):
+            return candidate
     raise RuntimeError("FFmpeg could not be located by the application.")
 
 

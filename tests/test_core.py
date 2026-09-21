@@ -181,3 +181,17 @@ def test_promo_track_options_override_start_and_duration(tmp_path: Path, monkeyp
         track_options={source: (12.5, 34.0)},
     )
     assert captured == {"source": source, "start": 12.5, "duration": 34.0}
+
+
+def test_require_ffmpeg_skips_broken_system_binary(monkeypatch, tmp_path):
+    from mm_toolkit import core
+
+    broken = tmp_path / "broken-ffmpeg"
+    working = tmp_path / "bundled-ffmpeg"
+    for exe in (broken, working):
+        exe.write_text("")
+    monkeypatch.setattr(core.shutil, "which", lambda name: str(broken))
+    monkeypatch.setattr(core.imageio_ffmpeg, "get_ffmpeg_exe", lambda: str(working))
+    monkeypatch.setattr(core, "_ffmpeg_runs", lambda path: path == str(working))
+
+    assert core.require_ffmpeg() == str(working)

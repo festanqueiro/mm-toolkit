@@ -6,6 +6,8 @@ policy in `CLAUDE.md` (patch by default, minor/major only when requested).
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-21
+
 ### Added
 - Reusable, drag-reorderable visual effects cascade for Video Creator
   (Overlay, Bass-reactive Blur, Rotate, VHS, Glitch), plus a separate Layers
@@ -34,6 +36,9 @@ policy in `CLAUDE.md` (patch by default, minor/major only when requested).
 - File/folder pickers use the OS-native dialog again instead of Qt's.
 - Image/video/overlay/background pickers now open in the current audio
   file's folder by default.
+- FFmpeg lookup now verifies each candidate actually launches and falls back
+  to the bundled binary, so a broken system install (e.g. a Homebrew dylib
+  mismatch) no longer breaks rendering, auto-detect, cutting or converting.
 
 ## [1.0.1] - 2026-08-18
 
