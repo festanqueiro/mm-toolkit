@@ -2,9 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [develop, main]
-  push:
-    branches: [develop]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -45,7 +43,6 @@ jobs:
 
   build:
     name: Build (${{ matrix.os }})
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     needs: [secret-scan, test]
     strategy:
       fail-fast: false
@@ -85,7 +82,7 @@ jobs:
       - name: Upload build for inspection
         uses: actions/upload-artifact@v4
         with:
-          name: develop-${{ runner.os }}-${{ runner.arch }}
+          name: pr-${{ runner.os }}-${{ runner.arch }}
           path: |
             dist/MM Toolkit.app
             dist/MM Toolkit

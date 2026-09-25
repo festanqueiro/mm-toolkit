@@ -88,7 +88,7 @@ class HistoryTab(QWidget):
         self.jobs.clear()
         for record in self.records:
             tool = {
-                "promo": "Video Generator",
+                "promo": "Video Creator",
                 "clips": "Media Cutter",
                 "converter": "Media Converter",
             }.get(record.get("tool"), "Media Tool")
@@ -114,6 +114,10 @@ class HistoryTab(QWidget):
         if record is None:
             return None
         return (record.get("created"), record.get("tool"), record.get("source"))
+
+    def select_latest(self) -> None:
+        if self.records:
+            self.jobs.setCurrentRow(0)
 
     def selected_record(self) -> dict | None:
         row = self.jobs.currentRow()
