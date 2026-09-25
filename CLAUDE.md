@@ -46,7 +46,9 @@ Every push to `main` (i.e. every release) bumps `mm_toolkit.__version__`: **patc
 
 ### Release flow
 
-- `develop-ci.yml`: on PRs/pushes to `develop` — secret scan, `pytest`, then a matrix build (macOS + Windows) to verify the PyInstaller bundle produces `dist/MM Toolkit.app` / `dist/MM Toolkit/MM Toolkit.exe`.
+Branching: `main` is the only long-lived branch. Work happens on short-lived `feature/*`/`fix/*`/`chore/*` branches that are PR'd straight into `main`; merging a PR is a release.
+
+- `ci.yml`: on PRs into `main` — secret scan, `pytest`, then a matrix build (macOS + Windows) to verify the PyInstaller bundle produces `dist/MM Toolkit.app` / `dist/MM Toolkit/MM Toolkit.exe`.
 - `main-release.yml`: on push to `main` — builds, code-signs and notarizes the macOS app (Apple secrets) and signs the Windows exe/installer (`scripts/windows-installer.iss`, Inno Setup) when the relevant certificate secrets are configured, then publishes a GitHub Release tagged `v<mm_toolkit.__version__>` with the macOS ZIP/DMG and Windows ZIP/installer attached.
 
 ## Codex config detected
