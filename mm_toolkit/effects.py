@@ -241,7 +241,9 @@ def apply_effect_chain(
                 # /120 rather than /60: the literal RPM math read as twice
                 # too fast on screen (e.g. the 33.3 RPM vinyl default spun
                 # like 66 RPM), so the displayed value is halved here.
-                angle = (time * settings.rotate.rpm / 120.0) * 360.0
+                # Negated: OpenCV's positive angle is counter-clockwise, and
+                # a spinning record turns clockwise.
+                angle = -(time * settings.rotate.rpm / 120.0) * 360.0
                 result = apply_rotate(result, angle, background)
         elif key == "vhs":
             if settings.vhs.enabled:

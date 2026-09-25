@@ -33,6 +33,7 @@ policy in `CLAUDE.md` (patch by default, minor/major only when requested).
   keep claiming leftover vertical space while collapsed — they now shrink
   to header height like every other section.
 - Rotate no longer leaves a visible dark seam at the rotated edge.
+- Rotate now spins clockwise, like a record on a turntable.
 - File/folder pickers use the OS-native dialog again instead of Qt's.
 - Image/video/overlay/background pickers now open in the current audio
   file's folder by default.
